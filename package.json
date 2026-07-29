@@ -1,0 +1,49 @@
+{
+  "name": "@madeup-video/course",
+  "version": "0.0.0-development",
+  "description": "Prepared-code and recovery tooling for the Made Up Video advanced monorepos course",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "madeup-video-course": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "recipes",
+    "recovery"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint .",
+    "pack:inspect": "pnpm pack --dry-run",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "engines": {
+    "node": "24.18.0",
+    "pnpm": "11.17.0"
+  },
+  "packageManager": "pnpm@11.17.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/madeupdev/madeup-video-course-cli.git"
+  },
+  "homepage": "https://github.com/madeupdev/madeup-video-course-cli#readme",
+  "bugs": {
+    "url": "https://github.com/madeupdev/madeup-video-course-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.13.3",
+    "eslint": "9.39.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
+  }
+}
