@@ -16,6 +16,9 @@ const githubRepositoryPathPattern =
   /^\/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+\/?$/;
 const githubRepositoryUrlPattern =
   /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+\/?$/;
+const windowsInvalidFilenamePattern = /[<>:"|?*]/;
+const windowsReservedBasenamePattern =
+  /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i;
 
 const stableIdentifier = z
   .string()
@@ -59,13 +62,41 @@ const repositoryUrl = z.string().refine((value) => {
   }
 }, 'Must be an HTTPS GitHub repository URL without a query or fragment');
 
+function containsAsciiControl(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x1f || codeUnit === 0x7f) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function portableFilenameIssue(value: string): string | undefined {
+  if (containsAsciiControl(value)) {
+    return 'Must not contain ASCII control characters';
+  }
+  if (windowsInvalidFilenamePattern.test(value)) {
+    return 'Must not contain characters that are invalid in Windows filenames';
+  }
+  if (value.endsWith(' ') || value.endsWith('.')) {
+    return 'Must not end in a space or period';
+  }
+  if (windowsReservedBasenamePattern.test(value)) {
+    return 'Must not use a Windows reserved device basename';
+  }
+
+  return undefined;
+}
+
 const portablePath = z.string().superRefine((value, context) => {
   let message: string | undefined;
 
   if (value.length === 0) {
     message = 'Must not be empty';
-  } else if (value.includes('\0')) {
-    message = 'Must not contain NUL characters';
+  } else if (containsAsciiControl(value)) {
+    message = 'Must not contain ASCII control characters';
   } else if (value.startsWith('/')) {
     message = 'Must be repository-relative, not absolute';
   } else if (/^[A-Za-z]:/.test(value)) {
@@ -82,6 +113,10 @@ const portablePath = z.string().superRefine((value, context) => {
       message = 'Must not contain current-directory segments';
     } else if (segments.some((segment) => segment === '..')) {
       message = 'Must not contain parent-directory segments';
+    } else {
+      message = segments
+        .map((segment) => portableFilenameIssue(segment))
+        .find((issue) => issue !== undefined);
     }
   }
 
@@ -93,15 +128,27 @@ const portablePath = z.string().superRefine((value, context) => {
   }
 });
 
-const assetName = z.string().refine(
-  (value) =>
-    value.length > '.tar.gz'.length &&
-    value.endsWith('.tar.gz') &&
-    !value.includes('/') &&
-    !value.includes('\\') &&
-    !value.includes('\0'),
-  'Must be a safe basename ending in .tar.gz',
-);
+const assetName = z.string().superRefine((value, context) => {
+  let message: string | undefined;
+
+  if (
+    value.length <= '.tar.gz'.length ||
+    !value.endsWith('.tar.gz')
+  ) {
+    message = 'Must be a basename ending in .tar.gz';
+  } else if (value.includes('/') || value.includes('\\')) {
+    message = 'Must not contain directory separators';
+  } else {
+    message = portableFilenameIssue(value);
+  }
+
+  if (message !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      message,
+    });
+  }
+});
 
 const operationMode = z.union([
   z.literal(0o644),
@@ -303,6 +350,7 @@ function addDuplicateIssues(
   property: string,
   message: string,
   issues: ManifestIssue[],
+  collisionKey: (value: string) => string = (value) => value,
 ): void {
   if (!Array.isArray(items)) {
     return;
@@ -315,15 +363,20 @@ function addDuplicateIssues(
     }
 
     const value = item[property];
-    if (seen.has(value)) {
+    const key = collisionKey(value);
+    if (seen.has(key)) {
       issues.push({
         path: `${basePath}[${index}].${property}`,
         message,
       });
     } else {
-      seen.add(value);
+      seen.add(key);
     }
   }
+}
+
+function filesystemCollisionKey(value: string): string {
+  return value.normalize('NFC').toLowerCase();
 }
 
 function addSemanticIssues(input: unknown, issues: ManifestIssue[]): void {
@@ -357,6 +410,7 @@ function addSemanticIssues(input: unknown, issues: ManifestIssue[]): void {
     'asset',
     'Recovery asset names must be unique',
     issues,
+    filesystemCollisionKey,
   );
   addDuplicateIssues(
     input.recipes,
@@ -435,7 +489,9 @@ function addSemanticIssues(input: unknown, issues: ManifestIssue[]): void {
       }
 
       if (typeof operation.destination === 'string') {
-        const foldedDestination = operation.destination.toLowerCase();
+        const foldedDestination = filesystemCollisionKey(
+          operation.destination,
+        );
         if (destinations.has(foldedDestination)) {
           issues.push({
             path: `${operationPath}.destination`,
@@ -450,7 +506,7 @@ function addSemanticIssues(input: unknown, issues: ManifestIssue[]): void {
         (operation.type === 'add' || operation.type === 'replace') &&
         typeof operation.template === 'string'
       ) {
-        const foldedTemplate = operation.template.toLowerCase();
+        const foldedTemplate = filesystemCollisionKey(operation.template);
         if (templates.has(foldedTemplate)) {
           issues.push({
             path: `${operationPath}.template`,

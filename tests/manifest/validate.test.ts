@@ -162,6 +162,71 @@ describe('validateManifest', () => {
     );
   });
 
+  it.each([
+    ['C0 control character', 'apps/control\nname.ts'],
+    ['DEL control character', 'apps/control\u007fname.ts'],
+    ['less-than character', 'apps/file<name.ts'],
+    ['greater-than character', 'apps/file>name.ts'],
+    ['colon character', 'apps/file:ads.ts'],
+    ['double-quote character', 'apps/file"name.ts'],
+    ['pipe character', 'apps/file|name.ts'],
+    ['question-mark character', 'apps/file?.ts'],
+    ['asterisk character', 'apps/file*.ts'],
+    ['trailing period', 'apps/trailing-dot.'],
+    ['trailing space', 'apps/trailing-space '],
+    ['CON device basename', 'apps/CON.ts'],
+    ['PRN device basename', 'apps/prn'],
+    ['AUX device basename', 'apps/Aux.json'],
+    ['NUL device basename', 'apps/nul.txt'],
+    ['COM1 device basename', 'apps/COM1.ts'],
+    ['COM9 device basename', 'apps/com9.js'],
+    ['LPT1 device basename', 'apps/LPT1.ts'],
+    ['LPT9 device basename', 'apps/lpt9.log'],
+    ['reserved intermediate directory', 'apps/CON/file.ts'],
+    ['invalid intermediate directory', 'apps/unsafe?/file.ts'],
+  ])('rejects a path segment containing a %s', (_label, path) => {
+    const input = freshManifest();
+    const operation = input.recipes[0]!.operations[0]!;
+    if (operation.type !== 'add') {
+      throw new Error('Fixture operation must be add');
+    }
+    operation.destination = path;
+    operation.template = path;
+
+    expect(issuePaths(input)).toEqual(
+      expect.arrayContaining([
+        '$.recipes[0].operations[0].destination',
+        '$.recipes[0].operations[0].template',
+      ]),
+    );
+  });
+
+  it('accepts ordinary portable Unicode filenames', () => {
+    const input = freshManifest();
+    const operation = input.recipes[0]!.operations[0]!;
+    if (operation.type !== 'add') {
+      throw new Error('Fixture operation must be add');
+    }
+    operation.destination = 'apps/storefront/src/café.ts';
+    operation.template = 'recipes/fixture-prepared-code/café.ts';
+    input.recoveryStates[0]!.asset = 'fixture-état.tar.gz';
+
+    expect(validateManifest(input).ok).toBe(true);
+  });
+
+  it('accepts non-reserved device-like filenames', () => {
+    const input = freshManifest();
+    const operation = input.recipes[0]!.operations[0]!;
+    if (operation.type !== 'add') {
+      throw new Error('Fixture operation must be add');
+    }
+    operation.destination = 'apps/COM10.ts';
+    operation.template = 'recipes/LPT10.ts';
+    input.recoveryStates[0]!.asset = 'NUL-safe.tar.gz';
+
+    expect(validateManifest(input).ok).toBe(true);
+  });
+
   it('rejects an empty operation array', () => {
     const input = freshManifest();
     input.recipes[0]!.operations = [];
@@ -187,6 +252,32 @@ describe('validateManifest', () => {
       throw new Error('Fixture operations must be add then replace');
     }
     second.template = first.template.toUpperCase();
+
+    expect(issuePaths(input)).toContain(
+      '$.recipes[0].operations[1].template',
+    );
+  });
+
+  it('rejects NFC-equivalent destination collisions', () => {
+    const input = freshManifest();
+    input.recipes[0]!.operations[0]!.destination = 'apps/café.ts';
+    input.recipes[0]!.operations[1]!.destination =
+      'apps/cafe\u0301.ts';
+
+    expect(issuePaths(input)).toContain(
+      '$.recipes[0].operations[1].destination',
+    );
+  });
+
+  it('rejects NFC-equivalent template collisions', () => {
+    const input = freshManifest();
+    const first = input.recipes[0]!.operations[0]!;
+    const second = input.recipes[0]!.operations[1]!;
+    if (first.type !== 'add' || second.type !== 'replace') {
+      throw new Error('Fixture operations must be add then replace');
+    }
+    first.template = 'recipes/café.ts';
+    second.template = 'recipes/cafe\u0301.ts';
 
     expect(issuePaths(input)).toContain(
       '$.recipes[0].operations[1].template',
@@ -390,6 +481,44 @@ describe('validateManifest', () => {
     input.recoveryStates[0]!.asset = asset;
 
     expect(issuePaths(input)).toContain('$.recoveryStates[0].asset');
+  });
+
+  it.each([
+    ['control character', 'bad\nname.tar.gz'],
+    ['DEL control character', 'bad\u007fname.tar.gz'],
+    ['less-than character', 'bad<name.tar.gz'],
+    ['greater-than character', 'bad>name.tar.gz'],
+    ['colon character', 'bad:name.tar.gz'],
+    ['double-quote character', 'bad"name.tar.gz'],
+    ['pipe character', 'bad|name.tar.gz'],
+    ['question-mark character', 'bad?name.tar.gz'],
+    ['asterisk character', 'bad*name.tar.gz'],
+    ['CON device basename', 'CON.tar.gz'],
+    ['PRN device basename', 'prn.tar.gz'],
+    ['AUX device basename', 'Aux.tar.gz'],
+    ['NUL device basename', 'nul.tar.gz'],
+    ['COM1 device basename', 'COM1.tar.gz'],
+    ['COM9 device basename', 'com9.tar.gz'],
+    ['LPT1 device basename', 'LPT1.tar.gz'],
+    ['LPT9 device basename', 'lpt9.tar.gz'],
+  ])('rejects an asset basename containing a %s', (_label, asset) => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.asset = asset;
+
+    expect(issuePaths(input)).toContain('$.recoveryStates[0].asset');
+  });
+
+  it.each([
+    ['case', 'Fixture-start.tar.gz'],
+    ['Unicode normalization', 'fixture-cafe\u0301.tar.gz'],
+  ])('rejects recovery asset collisions by %s', (label, collidingAsset) => {
+    const input = freshManifest();
+    if (label === 'Unicode normalization') {
+      input.recoveryStates[0]!.asset = 'fixture-café.tar.gz';
+    }
+    input.recoveryStates[1]!.asset = collidingAsset;
+
+    expect(issuePaths(input)).toContain('$.recoveryStates[1].asset');
   });
 
   it('rejects invalid and unstable identifiers', () => {
