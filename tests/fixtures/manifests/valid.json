@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "courseVersion": "1.0.0",
+  "project": {
+    "packageName": "@madeup-video/storefront",
+    "repository": "https://github.com/madeupdev/madeup-video-storefront"
+  },
+  "release": {
+    "repository": "https://github.com/madeupdev/madeup-video-storefront",
+    "tag": "course-v1.0.0"
+  },
+  "recoveryStates": [
+    {
+      "id": "fixture-start",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "asset": "fixture-start.tar.gz",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "verification": [
+        "pnpm test"
+      ]
+    },
+    {
+      "id": "fixture-result",
+      "sourceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "asset": "fixture-result.tar.gz",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "verification": [
+        "pnpm test"
+      ]
+    }
+  ],
+  "recipes": [
+    {
+      "id": "fixture-prepared-code",
+      "description": "Synthetic prepared-code recipe used only by manifest tests",
+      "expectedPackageName": "@madeup-video/storefront",
+      "startingState": "fixture-start",
+      "resultState": "fixture-result",
+      "operations": [
+        {
+          "type": "add",
+          "destination": "apps/storefront/src/fixture-added.ts",
+          "template": "recipes/fixture-prepared-code/fixture-added.ts",
+          "afterSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/storefront/src/fixture-replaced.ts",
+          "template": "recipes/fixture-prepared-code/fixture-replaced.ts",
+          "beforeSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "afterSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "mode": 493
+        },
+        {
+          "type": "delete",
+          "destination": "apps/storefront/src/fixture-deleted.ts",
+          "beforeSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      ],
+      "verification": [
+        "pnpm lint",
+        "pnpm test"
+      ]
+    }
+  ]
+}
