@@ -73,6 +73,15 @@ describe('resolveProjectPath', () => {
     ['apps/./admin/file.ts', 'current-directory-segment'],
     ['../outside', 'parent-directory-segment'],
     ['apps/admin/../../../outside', 'parent-directory-segment'],
+    ['apps/file<name.ts', 'windows-invalid-filename-character'],
+    ['apps/file>name.ts', 'windows-invalid-filename-character'],
+    ['apps/file:name.ts', 'windows-invalid-filename-character'],
+    ['apps/file"name.ts', 'windows-invalid-filename-character'],
+    ['apps/file|name.ts', 'windows-invalid-filename-character'],
+    ['apps/file?name.ts', 'windows-invalid-filename-character'],
+    ['apps/file*name.ts', 'windows-invalid-filename-character'],
+    ['apps/trailing-dot.', 'trailing-space-or-period'],
+    ['apps/trailing-space ', 'trailing-space-or-period'],
   ])('rejects %j as %s', async (relativePath, reason) => {
     const root = await temporaryDirectory('course-project-unsafe-path-');
 
@@ -85,6 +94,77 @@ describe('resolveProjectPath', () => {
         relativePath,
         reason,
       },
+    });
+  });
+
+  it.each([
+    'CON',
+    'con.ts',
+    'PRN',
+    'prn.json',
+    'AUX',
+    'aux.md',
+    'NUL',
+    'nul.txt',
+    'COM1',
+    'com2.ts',
+    'COM9.json',
+    'LPT1',
+    'lpt2.ts',
+    'LPT9.json',
+  ])('rejects Windows reserved device basename %j', async (filename) => {
+    const root = await temporaryDirectory(
+      'course-project-reserved-name-',
+    );
+    const relativePath = `apps/${filename}`;
+
+    const result = await resolveProjectPath(root, relativePath);
+
+    expect(result).toMatchObject({
+      ok: false,
+      finding: {
+        kind: 'unsafe-repository-path',
+        relativePath,
+        reason: 'windows-reserved-device-basename',
+      },
+    });
+  });
+
+  it('applies portable filename rules to intermediate directories', async () => {
+    const root = await temporaryDirectory(
+      'course-project-reserved-directory-',
+    );
+
+    const result = await resolveProjectPath(
+      root,
+      'apps/CON/nested/file.ts',
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      finding: {
+        kind: 'unsafe-repository-path',
+        relativePath: 'apps/CON/nested/file.ts',
+        reason: 'windows-reserved-device-basename',
+      },
+    });
+  });
+
+  it.each([
+    'apps/admin/ordinary-file.ts',
+    'apps/café/你好.ts',
+    'apps/COM10.ts',
+    'apps/LPT10.ts',
+    'apps/NUL-safe.ts',
+  ])('allows portable repository-relative path %j', async (relativePath) => {
+    const root = await temporaryDirectory('course-project-portable-path-');
+
+    const result = await resolveProjectPath(root, relativePath);
+
+    expect(result).toMatchObject({
+      ok: true,
+      projectRoot: root,
+      relativePath,
     });
   });
 

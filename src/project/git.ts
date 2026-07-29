@@ -71,14 +71,56 @@ type GitCommandResult =
       };
     };
 
+const unsafeGitEnvironmentVariables = new Set([
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_CEILING_DIRECTORIES',
+  'GIT_COMMON_DIR',
+  'GIT_CONFIG',
+  'GIT_CONFIG_COUNT',
+  'GIT_CONFIG_GLOBAL',
+  'GIT_CONFIG_NOSYSTEM',
+  'GIT_CONFIG_PARAMETERS',
+  'GIT_CONFIG_SYSTEM',
+  'GIT_DIR',
+  'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  'GIT_GRAFT_FILE',
+  'GIT_IMPLICIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+  'GIT_NAMESPACE',
+  'GIT_NO_REPLACE_OBJECTS',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_PREFIX',
+  'GIT_QUARANTINE_PATH',
+  'GIT_REPLACE_REF_BASE',
+  'GIT_SHALLOW_FILE',
+  'GIT_WORK_TREE',
+]);
+const inlineGitConfigVariablePattern =
+  /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/;
+
+function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
+  const environment = {
+    ...process.env,
+  };
+  for (const name of Object.keys(environment)) {
+    const normalizedName = name.toUpperCase();
+    if (
+      unsafeGitEnvironmentVariables.has(normalizedName) ||
+      inlineGitConfigVariablePattern.test(normalizedName)
+    ) {
+      delete environment[name];
+    }
+  }
+
+  environment.LANG = 'C';
+  environment.LC_ALL = 'C';
+  return environment;
+}
+
 function runGit(args: readonly string[]): Promise<GitCommandResult> {
   return new Promise((resolveResult) => {
     const child = spawn('git', args, {
-      env: {
-        ...process.env,
-        LANG: 'C',
-        LC_ALL: 'C',
-      },
+      env: sanitizedGitEnvironment(),
       shell: false,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -18,6 +18,34 @@ import { inspectGitRepository } from '../../src/project/git.js';
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
 
+async function withEnvironmentVariables(
+  variables: Readonly<Record<string, string | undefined>>,
+  action: () => Promise<void>,
+): Promise<void> {
+  const originals = new Map(
+    Object.keys(variables).map((name) => [name, process.env[name]]),
+  );
+  for (const [name, value] of Object.entries(variables)) {
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+
+  try {
+    await action();
+  } finally {
+    for (const [name, value] of originals) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
+
 async function temporaryDirectory(prefix: string): Promise<string> {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), prefix)),
@@ -64,6 +92,62 @@ async function initializedRepository(): Promise<string> {
   await runGit(repository, ['add', '--all']);
   await runGit(repository, ['commit', '--quiet', '-m', 'test fixture']);
   return repository;
+}
+
+async function repositoriesWithDistinctState(): Promise<{
+  repositoryA: string;
+  repositoryB: string;
+}> {
+  const repositoryA = await initializedRepository();
+  const repositoryB = await initializedRepository();
+  await writeFile(
+    join(repositoryA, 'only-in-a.txt'),
+    'untracked in repository A\n',
+    'utf8',
+  );
+  await writeFile(
+    join(repositoryB, 'tracked-only-in-b.txt'),
+    'tracked in repository B\n',
+    'utf8',
+  );
+  await runGit(repositoryB, ['add', 'tracked-only-in-b.txt']);
+  await runGit(repositoryB, [
+    'commit',
+    '--quiet',
+    '-m',
+    'distinguish repository B',
+  ]);
+  return {
+    repositoryA,
+    repositoryB,
+  };
+}
+
+async function expectRepositoryAInspection(
+  variables: (repositories: {
+    repositoryA: string;
+    repositoryB: string;
+  }) => Readonly<Record<string, string>>,
+): Promise<void> {
+  const repositories = await repositoriesWithDistinctState();
+  const { repositoryA } = repositories;
+
+  await withEnvironmentVariables(variables(repositories), async () => {
+    const result = await inspectGitRepository(repositoryA);
+
+    expect(result).toEqual({
+      ok: true,
+      repositoryRoot: repositoryA,
+      clean: false,
+      changes: [
+        {
+          path: 'only-in-a.txt',
+          index: null,
+          worktree: 'untracked',
+        },
+      ],
+    });
+  });
 }
 
 afterEach(async () => {
@@ -128,6 +212,84 @@ describe('inspectGitRepository', () => {
       clean: true,
       changes: [],
     });
+  });
+
+  it('ignores an inherited GIT_DIR that selects another repository', async () => {
+    const { repositoryA, repositoryB } =
+      await repositoriesWithDistinctState();
+
+    await withEnvironmentVariables(
+      {
+        GIT_DIR: join(repositoryB, '.git'),
+      },
+      async () => {
+        const result = await inspectGitRepository(repositoryA);
+
+        expect(result).toEqual({
+          ok: true,
+          repositoryRoot: repositoryA,
+          clean: false,
+          changes: [
+            {
+              path: 'only-in-a.txt',
+              index: null,
+              worktree: 'untracked',
+            },
+          ],
+        });
+      },
+    );
+  });
+
+  it('ignores an inherited GIT_WORK_TREE that selects another worktree', async () => {
+    await expectRepositoryAInspection(({ repositoryB }) => ({
+      GIT_WORK_TREE: repositoryB,
+    }));
+  });
+
+  it('ignores an inherited GIT_INDEX_FILE that selects another index', async () => {
+    await expectRepositoryAInspection(({ repositoryB }) => ({
+      GIT_INDEX_FILE: join(repositoryB, '.git', 'index'),
+    }));
+  });
+
+  it('ignores inherited inline Git configuration that changes status facts', async () => {
+    const repositories = await repositoriesWithDistinctState();
+    const injectedExcludesFile = join(
+      repositories.repositoryB,
+      'injected-global-excludes',
+    );
+    await writeFile(
+      injectedExcludesFile,
+      'only-in-a.txt\n',
+      'utf8',
+    );
+
+    await withEnvironmentVariables(
+      {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.excludesFile',
+        GIT_CONFIG_VALUE_0: injectedExcludesFile,
+      },
+      async () => {
+        const result = await inspectGitRepository(
+          repositories.repositoryA,
+        );
+
+        expect(result).toEqual({
+          ok: true,
+          repositoryRoot: repositories.repositoryA,
+          clean: false,
+          changes: [
+            {
+              path: 'only-in-a.txt',
+              index: null,
+              worktree: 'untracked',
+            },
+          ],
+        });
+      },
+    );
   });
 
   it('identifies staged, unstaged, deleted, and untracked changes', async () => {

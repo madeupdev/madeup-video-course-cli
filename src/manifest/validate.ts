@@ -5,6 +5,10 @@ import type {
   ManifestIssue,
   ManifestValidationResult,
 } from './types.js';
+import {
+  containsAsciiControl,
+  findPortableFilenameIssue,
+} from '../path/portable.js';
 
 const stableIdentifierPattern =
   /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
@@ -16,9 +20,6 @@ const githubRepositoryPathPattern =
   /^\/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+\/?$/;
 const githubRepositoryUrlPattern =
   /^https:\/\/github\.com\/[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\/[A-Za-z0-9._-]+\/?$/;
-const windowsInvalidFilenamePattern = /[<>:"|?*]/;
-const windowsReservedBasenamePattern =
-  /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i;
 
 const stableIdentifier = z
   .string()
@@ -62,34 +63,6 @@ const repositoryUrl = z.string().refine((value) => {
   }
 }, 'Must be an HTTPS GitHub repository URL without a query or fragment');
 
-function containsAsciiControl(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    if (codeUnit <= 0x1f || codeUnit === 0x7f) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function portableFilenameIssue(value: string): string | undefined {
-  if (containsAsciiControl(value)) {
-    return 'Must not contain ASCII control characters';
-  }
-  if (windowsInvalidFilenamePattern.test(value)) {
-    return 'Must not contain characters that are invalid in Windows filenames';
-  }
-  if (value.endsWith(' ') || value.endsWith('.')) {
-    return 'Must not end in a space or period';
-  }
-  if (windowsReservedBasenamePattern.test(value)) {
-    return 'Must not use a Windows reserved device basename';
-  }
-
-  return undefined;
-}
-
 const portablePath = z.string().superRefine((value, context) => {
   let message: string | undefined;
 
@@ -115,7 +88,7 @@ const portablePath = z.string().superRefine((value, context) => {
       message = 'Must not contain parent-directory segments';
     } else {
       message = segments
-        .map((segment) => portableFilenameIssue(segment))
+        .map((segment) => findPortableFilenameIssue(segment)?.message)
         .find((issue) => issue !== undefined);
     }
   }
@@ -139,7 +112,7 @@ const assetName = z.string().superRefine((value, context) => {
   } else if (value.includes('/') || value.includes('\\')) {
     message = 'Must not contain directory separators';
   } else {
-    message = portableFilenameIssue(value);
+    message = findPortableFilenameIssue(value)?.message;
   }
 
   if (message !== undefined) {

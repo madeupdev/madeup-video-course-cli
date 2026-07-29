@@ -12,6 +12,12 @@ import {
   sep,
 } from 'node:path';
 
+import {
+  findPortableFilenameIssue,
+} from '../path/portable.js';
+import type {
+  PortableFilenameIssueKind,
+} from '../path/portable.js';
 import { hashBytes } from './hash.js';
 
 export type UnsafeRepositoryPathReason =
@@ -23,8 +29,8 @@ export type UnsafeRepositoryPathReason =
   | 'empty-segment'
   | 'current-directory-segment'
   | 'parent-directory-segment'
-  | 'control-character'
-  | 'resolved-outside-project';
+  | 'resolved-outside-project'
+  | PortableFilenameIssueKind;
 
 export type ProjectPathFinding =
   | {
@@ -152,13 +158,6 @@ function repositoryPathIssue(
   if (relativePath.includes('\\')) {
     return 'backslash-separator';
   }
-  for (let index = 0; index < relativePath.length; index += 1) {
-    const codeUnit = relativePath.charCodeAt(index);
-    if (codeUnit <= 0x1f || codeUnit === 0x7f) {
-      return 'control-character';
-    }
-  }
-
   const segments = relativePath.split('/');
   if (segments.some((segment) => segment.length === 0)) {
     return 'empty-segment';
@@ -170,7 +169,9 @@ function repositoryPathIssue(
     return 'parent-directory-segment';
   }
 
-  return undefined;
+  return segments
+    .map((segment) => findPortableFilenameIssue(segment)?.kind)
+    .find((issue) => issue !== undefined);
 }
 
 function isWithinPath(projectRoot: string, target: string): boolean {
