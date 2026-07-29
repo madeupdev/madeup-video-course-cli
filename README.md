@@ -6,10 +6,12 @@ is not a general-purpose project scaffolder.
 
 ## Development status
 
-This repository currently contains the CLI foundation and internal delivery
-manifest validation and loading. The executable supports `--help`, but no
-course operations are implemented yet. In particular, recipes and recovery
-states cannot be applied, inspected, or created by this development version.
+This repository currently contains the CLI foundation, internal delivery
+manifest validation and loading, and a safe internal layer for inspecting
+project identity, repository-relative files, fingerprints, and Git state. The
+executable supports `--help`, but no learner-facing course operation is
+implemented yet. In particular, recipes and recovery states cannot be applied,
+diagnosed, recovered, or created by this development version.
 
 The planned learner-facing interface is:
 
