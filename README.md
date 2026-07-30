@@ -7,7 +7,8 @@ is not a general-purpose project scaffolder.
 ## Development status
 
 This repository currently contains the CLI foundation, internal delivery
-manifest validation and loading, and a safe internal layer for inspecting
+manifest validation and loading—including canonical course-tree inventories
+and the narrow local-artifact policy—and a safe internal layer for inspecting
 project identity, repository-relative files, fingerprints, and Git state. The
 executable supports `--help`, but no learner-facing course operation is
 implemented yet. In particular, recipes and recovery states cannot be applied,

@@ -13,6 +13,10 @@ export type PortableFilenameIssue = {
   message: string;
 };
 
+export function filesystemCollisionKey(value: string): string {
+  return value.normalize('NFC').toLowerCase();
+}
+
 export function containsAsciiControl(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);

@@ -52,6 +52,31 @@ describe('validateManifest', () => {
 
     const manifest: CourseManifest = result.manifest;
     expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.project.localArtifacts).toEqual(
+      expect.arrayContaining([
+        { type: 'directory-name', name: 'node_modules' },
+        { type: 'directory-name', name: '.next' },
+        { type: 'directory-name', name: 'coverage' },
+        { type: 'directory', path: 'generated/prisma' },
+        { type: 'directory', path: 'playwright-report' },
+        { type: 'directory', path: 'test-results' },
+        { type: 'file', path: 'next-env.d.ts' },
+        { type: 'file-suffix', suffix: '.tsbuildinfo' },
+        { type: 'file', path: '.env' },
+        { type: 'file', path: '.env.local' },
+        { type: 'file', path: '.env.test' },
+      ]),
+    );
+    expect(
+      manifest.recoveryStates[0]?.tree.files.map(({ path }) => path),
+    ).toEqual([
+      '.env.example',
+      'apps/storefront/src/main.ts',
+      'migrations/001-initial.sql',
+      'package.json',
+      'pnpm-lock.yaml',
+      'scripts/verify.sh',
+    ]);
     expect(manifest.recipes[0]?.operations.map(({ type }) => type)).toEqual([
       'add',
       'replace',
@@ -90,6 +115,18 @@ describe('validateManifest', () => {
     ['project', (input: CourseManifest) => input.project],
     ['release', (input: CourseManifest) => input.release],
     ['recovery state', (input: CourseManifest) => input.recoveryStates[0]!],
+    [
+      'recovery tree',
+      (input: CourseManifest) => input.recoveryStates[0]!.tree,
+    ],
+    [
+      'recovery tree file',
+      (input: CourseManifest) => input.recoveryStates[0]!.tree.files[0]!,
+    ],
+    [
+      'local-artifact rule',
+      (input: CourseManifest) => input.project.localArtifacts[0]!,
+    ],
     ['recipe', (input: CourseManifest) => input.recipes[0]!],
     [
       'operation',
@@ -124,6 +161,342 @@ describe('validateManifest', () => {
       expect.arrayContaining([
         '$.recoveryStates[1].asset',
         '$.recoveryStates[1].id',
+      ]),
+    );
+  });
+
+  it('requires every recovery state to declare its complete tree', () => {
+    const input = freshManifest();
+    input.recoveryStates[0] = withoutProperty(
+      input.recoveryStates[0]!,
+      'tree',
+    ) as CourseManifest['recoveryStates'][number];
+
+    expect(issuePaths(input)).toContain('$.recoveryStates[0].tree');
+  });
+
+  it.each(['course-tree-v2', 'unknown'])(
+    'rejects the tree algorithm %s',
+    (algorithm) => {
+      const input = freshManifest();
+      input.recoveryStates[0]!.tree.algorithm =
+        algorithm as 'course-tree-v1';
+
+      expect(issuePaths(input)).toContain(
+        '$.recoveryStates[0].tree.algorithm',
+      );
+    },
+  );
+
+  it('rejects an empty course-tree inventory', () => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files = [];
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files',
+    );
+  });
+
+  it.each([
+    ['absolute path', '/etc/passwd'],
+    ['backslash', String.raw`apps\storefront\main.ts`],
+    ['empty segment', 'apps//main.ts'],
+    ['parent traversal', 'apps/../main.ts'],
+    ['control character', 'apps/control\nmain.ts'],
+    ['Windows-invalid character', 'apps/main?.ts'],
+    ['reserved Windows basename', 'apps/CON.ts'],
+    ['trailing period', 'apps/main.'],
+  ])('rejects a tree file with an unsafe %s', (_label, path) => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files[0]!.path = path;
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[0].path',
+    );
+  });
+
+  it('rejects a tree path that is not normalized to NFC', () => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files[1]!.path =
+      'apps/storefront/src/cafe\u0301.ts';
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[1].path',
+    );
+  });
+
+  it('rejects repository Git metadata from a course-tree inventory', () => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files[0]!.path = '.git/config';
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[0].path',
+    );
+  });
+
+  it('requires tree files to use deterministic path order', () => {
+    const input = freshManifest();
+    const files = input.recoveryStates[0]!.tree.files;
+    [files[0], files[1]] = [files[1]!, files[0]!];
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[1].path',
+    );
+  });
+
+  it.each([
+    ['exact duplicate', 'apps/storefront/src/main.ts'],
+    ['case-only collision', 'APPS/STOREFRONT/SRC/MAIN.TS'],
+  ])('rejects a tree path %s', (_label, collidingPath) => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files.splice(2, 0, {
+      path: collidingPath,
+      mode: 0o644,
+      sha256: '9'.repeat(64),
+    });
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[2].path',
+    );
+  });
+
+  it('rejects Unicode-normalization tree path collisions', () => {
+    const input = freshManifest();
+    const files = input.recoveryStates[0]!.tree.files;
+    files[1]!.path = 'apps/storefront/src/café.ts';
+    files.splice(2, 0, {
+      path: 'apps/storefront/src/cafe\u0301.ts',
+      mode: 0o644,
+      sha256: '9'.repeat(64),
+    });
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[2].path',
+    );
+  });
+
+  it.each([0, 0o600, 0o700, 0o777])(
+    'rejects tree mode %s',
+    (mode) => {
+      const input = freshManifest();
+      input.recoveryStates[0]!.tree.files[0]!.mode = mode as 0o644;
+
+      expect(issuePaths(input)).toContain(
+        '$.recoveryStates[0].tree.files[0].mode',
+      );
+    },
+  );
+
+  it.each([
+    ['short value', 'abc123'],
+    ['uppercase value', 'A'.repeat(64)],
+  ])('rejects a tree SHA-256 %s', (_label, sha256) => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files[0]!.sha256 = sha256;
+
+    expect(issuePaths(input)).toContain(
+      '$.recoveryStates[0].tree.files[0].sha256',
+    );
+  });
+
+  it('rejects unknown tree and tree-file fields', () => {
+    const input = freshManifest();
+    Object.assign(input.recoveryStates[0]!.tree, {
+      digest: '9'.repeat(64),
+    });
+    Object.assign(input.recoveryStates[0]!.tree.files[0]!, { size: 123 });
+
+    expect(issuePaths(input)).toEqual(
+      expect.arrayContaining([
+        '$.recoveryStates[0].tree.digest',
+        '$.recoveryStates[0].tree.files[0].size',
+      ]),
+    );
+  });
+
+  it('rejects an invalid local-artifact discriminator', () => {
+    const input = freshManifest() as unknown as {
+      project: { localArtifacts: unknown[] };
+    };
+    input.project.localArtifacts = [
+      {
+        type: 'glob',
+        pattern: '**/.cache/**',
+        path: '/outside',
+        name: 'bad/name',
+        suffix: '*',
+      },
+    ];
+
+    expect(issuePaths(input)).toEqual(
+      expect.arrayContaining([
+        '$.project.localArtifacts[0].name',
+        '$.project.localArtifacts[0].path',
+        '$.project.localArtifacts[0].pattern',
+        '$.project.localArtifacts[0].suffix',
+        '$.project.localArtifacts[0].type',
+      ]),
+    );
+  });
+
+  it.each([
+    ['file', '/absolute.env'],
+    ['file', '../outside.env'],
+    ['directory', String.raw`generated\prisma`],
+    ['directory', 'coverage//reports'],
+  ] as const)(
+    'rejects an unsafe local-artifact %s path',
+    (type, path) => {
+      const input = freshManifest();
+      input.project.localArtifacts = [{ type, path }];
+
+      expect(issuePaths(input)).toContain(
+        '$.project.localArtifacts[0].path',
+      );
+    },
+  );
+
+  it.each([
+    ['empty', ''],
+    ['multiple segments', 'build/cache'],
+    ['parent traversal', '..'],
+    ['control character', 'bad\nname'],
+    ['Windows-dangerous character', 'bad?name'],
+    ['reserved Windows name', 'CON'],
+  ])('rejects a directory-name rule with an %s name', (_label, name) => {
+    const input = freshManifest();
+    input.project.localArtifacts = [{ type: 'directory-name', name }];
+
+    expect(issuePaths(input)).toContain(
+      '$.project.localArtifacts[0].name',
+    );
+  });
+
+  it.each([
+    ['empty suffix', ''],
+    ['every-extension suffix', '.'],
+    ['missing leading period', 'tsbuildinfo'],
+    ['separator', '.cache/file'],
+    ['backslash', String.raw`.cache\file`],
+    ['traversal-like value', '..'],
+    ['control character', '.bad\n'],
+    ['Windows-dangerous character', '.bad?'],
+  ])('rejects a dangerous %s', (_label, suffix) => {
+    const input = freshManifest();
+    input.project.localArtifacts = [{ type: 'file-suffix', suffix }];
+
+    expect(issuePaths(input)).toContain(
+      '$.project.localArtifacts[0].suffix',
+    );
+  });
+
+  it.each([
+    [{ type: 'file', path: '.git' }, 'path'],
+    [{ type: 'directory', path: '.git/objects' }, 'path'],
+    [{ type: 'directory-name', name: '.git' }, 'name'],
+    [{ type: 'file-suffix', suffix: '.git' }, 'suffix'],
+  ] as const)(
+    'rejects repository Git metadata as an author-editable local rule',
+    (rule, property) => {
+      const input = freshManifest();
+      input.project.localArtifacts = [rule];
+
+      expect(issuePaths(input)).toContain(
+        `$.project.localArtifacts[0].${property}`,
+      );
+    },
+  );
+
+  it('requires local-artifact rules to use deterministic order', () => {
+    const input = freshManifest();
+    const rules = input.project.localArtifacts;
+    [rules[0], rules[1]] = [rules[1]!, rules[0]!];
+
+    expect(issuePaths(input)).toContain(
+      '$.project.localArtifacts[1].path',
+    );
+  });
+
+  it.each([
+    ['exact duplicate', '.env'],
+    ['case-only collision', '.ENV'],
+  ])('rejects a local-artifact rule %s', (_label, path) => {
+    const input = freshManifest();
+    input.project.localArtifacts = [
+      { type: 'file', path: '.env' },
+      { type: 'file', path },
+    ];
+
+    expect(issuePaths(input)).toContain(
+      '$.project.localArtifacts[1].path',
+    );
+  });
+
+  it('rejects Unicode-normalization local-artifact collisions', () => {
+    const input = freshManifest();
+    input.project.localArtifacts = [
+      { type: 'file', path: 'café.local' },
+      { type: 'file', path: 'cafe\u0301.local' },
+    ];
+
+    expect(issuePaths(input)).toContain(
+      '$.project.localArtifacts[1].path',
+    );
+  });
+
+  it.each([
+    [{ type: 'file', path: '.env.example' }, 'path'],
+    [{ type: 'directory', path: 'apps' }, 'path'],
+    [{ type: 'directory-name', name: 'src' }, 'name'],
+    [{ type: 'file-suffix', suffix: '.json' }, 'suffix'],
+  ] as const)(
+    'rejects a local-artifact rule that hides an inventory file',
+    (rule, property) => {
+      const input = freshManifest();
+      input.project.localArtifacts = [rule];
+
+      expect(issuePaths(input)).toContain(
+        `$.project.localArtifacts[0].${property}`,
+      );
+    },
+  );
+
+  it.each([
+    { type: 'file', path: 'apps/storefront' },
+    { type: 'directory', path: 'apps/store' },
+    { type: 'directory-name', name: 'main.ts' },
+    { type: 'file-suffix', suffix: '.src' },
+  ] as const)(
+    'does not broaden local-artifact matching for $type rules',
+    (rule) => {
+      const input = freshManifest();
+      input.project.localArtifacts = [rule];
+
+      expect(validateManifest(input).ok).toBe(true);
+    },
+  );
+
+  it('aggregates tree and local-policy errors deterministically', () => {
+    const input = freshManifest();
+    input.recoveryStates[0]!.tree.files[0]!.path = '/outside';
+    input.recoveryStates[0]!.tree.files[0]!.mode = 0o777 as 0o644;
+    input.recoveryStates[0]!.tree.files[0]!.sha256 = 'ABC';
+    input.project.localArtifacts = [
+      { type: 'directory-name', name: 'bad/name' },
+      { type: 'file-suffix', suffix: '*' },
+    ];
+
+    const first = invalidIssues(input);
+    const second = invalidIssues(input);
+
+    expect(first).toEqual(second);
+    expect(first.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        '$.project.localArtifacts[0].name',
+        '$.project.localArtifacts[1].suffix',
+        '$.recoveryStates[0].tree.files[0].mode',
+        '$.recoveryStates[0].tree.files[0].path',
+        '$.recoveryStates[0].tree.files[0].sha256',
       ]),
     );
   });

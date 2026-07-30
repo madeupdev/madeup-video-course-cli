@@ -8,6 +8,7 @@ import type {
 import {
   containsAsciiControl,
   findPortableFilenameIssue,
+  filesystemCollisionKey,
 } from '../path/portable.js';
 
 const stableIdentifierPattern =
@@ -40,6 +41,13 @@ const verificationCommands = z
 const sha256 = z
   .string()
   .regex(sha256Pattern, 'Must be exactly 64 hexadecimal characters');
+
+const lowercaseSha256 = z
+  .string()
+  .regex(
+    /^[a-f0-9]{64}$/,
+    'Must be exactly 64 lowercase hexadecimal characters',
+  );
 
 const repositoryUrl = z.string().refine((value) => {
   if (!githubRepositoryUrlPattern.test(value)) {
@@ -101,6 +109,58 @@ const portablePath = z.string().superRefine((value, context) => {
   }
 });
 
+const nfcPortablePath = portablePath.refine(
+  (value) => value === value.normalize('NFC'),
+  'Must be normalized to NFC',
+);
+
+const portableBasename = z.string().superRefine((value, context) => {
+  let message: string | undefined;
+
+  if (value.length === 0) {
+    message = 'Must not be empty';
+  } else if (value.includes('/') || value.includes('\\')) {
+    message = 'Must be exactly one portable basename segment';
+  } else if (value === '.' || value === '..') {
+    message = 'Must not be a current- or parent-directory segment';
+  } else if (value !== value.normalize('NFC')) {
+    message = 'Must be normalized to NFC';
+  } else {
+    message = findPortableFilenameIssue(value)?.message;
+  }
+
+  if (message !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      message,
+    });
+  }
+});
+
+const constrainedFileSuffix = z.string().superRefine((value, context) => {
+  let message: string | undefined;
+
+  if (value.length === 0) {
+    message = 'Must not be empty';
+  } else if (!/^\.[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value)) {
+    message =
+      'Must start with a period followed by a constrained portable suffix';
+  } else if (value.endsWith('.')) {
+    message = 'Must not end in a period';
+  } else if (value !== value.normalize('NFC')) {
+    message = 'Must be normalized to NFC';
+  } else {
+    message = findPortableFilenameIssue(`file${value}`)?.message;
+  }
+
+  if (message !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      message,
+    });
+  }
+});
+
 const assetName = z.string().superRefine((value, context) => {
   let message: string | undefined;
 
@@ -126,6 +186,46 @@ const assetName = z.string().superRefine((value, context) => {
 const operationMode = z.union([
   z.literal(0o644),
   z.literal(0o755),
+]);
+
+const courseTreeFileSchema = z.strictObject({
+  path: nfcPortablePath,
+  mode: operationMode,
+  sha256: lowercaseSha256,
+});
+
+const courseTreeSchema = z.strictObject({
+  algorithm: z.literal('course-tree-v1'),
+  files: z
+    .array(courseTreeFileSchema)
+    .min(1, 'Must contain at least one course-managed file'),
+});
+
+const localFileRuleSchema = z.strictObject({
+  type: z.literal('file'),
+  path: nfcPortablePath,
+});
+
+const localDirectoryRuleSchema = z.strictObject({
+  type: z.literal('directory'),
+  path: nfcPortablePath,
+});
+
+const localDirectoryNameRuleSchema = z.strictObject({
+  type: z.literal('directory-name'),
+  name: portableBasename,
+});
+
+const localFileSuffixRuleSchema = z.strictObject({
+  type: z.literal('file-suffix'),
+  suffix: constrainedFileSuffix,
+});
+
+const localArtifactRuleSchema = z.discriminatedUnion('type', [
+  localFileRuleSchema,
+  localDirectoryRuleSchema,
+  localDirectoryNameRuleSchema,
+  localFileSuffixRuleSchema,
 ]);
 
 const addOperationSchema = z.strictObject({
@@ -164,6 +264,7 @@ const recoveryStateSchema = z.strictObject({
     .regex(commitPattern, 'Must be exactly 40 hexadecimal characters'),
   asset: assetName,
   sha256,
+  tree: courseTreeSchema,
   verification: verificationCommands,
 });
 
@@ -187,6 +288,7 @@ const courseManifestSchema = z.strictObject({
   project: z.strictObject({
     packageName: z.literal('@madeup-video/storefront'),
     repository: repositoryUrl,
+    localArtifacts: z.array(localArtifactRuleSchema),
   }),
   release: z.strictObject({
     repository: repositoryUrl,
@@ -204,6 +306,12 @@ const operationFields = new Set([
   'beforeSha256',
   'afterSha256',
   'mode',
+]);
+const localArtifactRuleFields = new Set([
+  'type',
+  'path',
+  'name',
+  'suffix',
 ]);
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -317,6 +425,46 @@ function addInvalidOperationIssues(
   }
 }
 
+function addInvalidLocalArtifactIssues(
+  rule: UnknownRecord,
+  rulePath: string,
+  issues: ManifestIssue[],
+): void {
+  for (const key of Object.keys(rule)) {
+    if (!localArtifactRuleFields.has(key)) {
+      issues.push({
+        path: `${rulePath}${jsonPath([key]).slice(1)}`,
+        message: 'Unknown field',
+      });
+    }
+  }
+
+  if ('path' in rule) {
+    addFieldIssues(
+      nfcPortablePath,
+      rule.path,
+      `${rulePath}.path`,
+      issues,
+    );
+  }
+  if ('name' in rule) {
+    addFieldIssues(
+      portableBasename,
+      rule.name,
+      `${rulePath}.name`,
+      issues,
+    );
+  }
+  if ('suffix' in rule) {
+    addFieldIssues(
+      constrainedFileSuffix,
+      rule.suffix,
+      `${rulePath}.suffix`,
+      issues,
+    );
+  }
+}
+
 function addDuplicateIssues(
   items: unknown,
   basePath: string,
@@ -348,13 +496,245 @@ function addDuplicateIssues(
   }
 }
 
-function filesystemCollisionKey(value: string): string {
-  return value.normalize('NFC').toLowerCase();
+const localArtifactTypeOrder = new Map([
+  ['file', 0],
+  ['directory', 1],
+  ['directory-name', 2],
+  ['file-suffix', 3],
+]);
+
+function targetsRepositoryGitMetadata(value: string): boolean {
+  return filesystemCollisionKey(value).split('/')[0] === '.git';
+}
+
+function addCourseTreeIssues(
+  recoveryStates: unknown,
+  issues: ManifestIssue[],
+): string[] {
+  const declaredPaths: string[] = [];
+  if (!Array.isArray(recoveryStates)) {
+    return declaredPaths;
+  }
+
+  for (const [stateIndex, state] of recoveryStates.entries()) {
+    if (!isRecord(state) || !isRecord(state.tree)) {
+      continue;
+    }
+
+    const files = state.tree.files;
+    const filesPath = `$.recoveryStates[${stateIndex}].tree.files`;
+    addDuplicateIssues(
+      files,
+      filesPath,
+      'path',
+      'Course-tree paths must be unique after NFC normalization and case folding',
+      issues,
+      filesystemCollisionKey,
+    );
+    if (!Array.isArray(files)) {
+      continue;
+    }
+
+    let previousKey: string | undefined;
+    for (const [fileIndex, file] of files.entries()) {
+      if (!isRecord(file) || typeof file.path !== 'string') {
+        continue;
+      }
+
+      declaredPaths.push(file.path);
+      if (targetsRepositoryGitMetadata(file.path)) {
+        issues.push({
+          path: `${filesPath}[${fileIndex}].path`,
+          message:
+            'Repository-root .git metadata is CLI infrastructure, not a course-tree file',
+        });
+      }
+      const key = filesystemCollisionKey(file.path);
+      if (previousKey !== undefined && compareText(previousKey, key) > 0) {
+        issues.push({
+          path: `${filesPath}[${fileIndex}].path`,
+          message:
+            'Course-tree files must be sorted by normalized lowercase path',
+        });
+      }
+      previousKey = key;
+    }
+  }
+
+  return declaredPaths;
+}
+
+function localArtifactRuleValue(
+  rule: UnknownRecord,
+):
+  | {
+      type: string;
+      rank: number;
+      property: 'path' | 'name' | 'suffix';
+      value: string;
+    }
+  | undefined {
+  const type = rule.type;
+  if (typeof type !== 'string') {
+    return undefined;
+  }
+
+  const rank = localArtifactTypeOrder.get(type);
+  const property =
+    type === 'file' || type === 'directory'
+      ? 'path'
+      : type === 'directory-name'
+        ? 'name'
+        : type === 'file-suffix'
+          ? 'suffix'
+          : undefined;
+  if (
+    rank === undefined ||
+    property === undefined ||
+    typeof rule[property] !== 'string'
+  ) {
+    return undefined;
+  }
+
+  return {
+    type,
+    rank,
+    property,
+    value: rule[property],
+  };
+}
+
+function localArtifactMatchesPath(
+  rule: ReturnType<typeof localArtifactRuleValue>,
+  filePath: string,
+): boolean {
+  if (rule === undefined) {
+    return false;
+  }
+
+  const pathKey = filesystemCollisionKey(filePath);
+  const valueKey = filesystemCollisionKey(rule.value);
+  if (rule.type === 'file') {
+    return pathKey === valueKey;
+  }
+  if (rule.type === 'directory') {
+    return pathKey.startsWith(`${valueKey}/`);
+  }
+
+  const segments = pathKey.split('/');
+  const basename = segments.pop() ?? '';
+  if (rule.type === 'directory-name') {
+    return segments.some((segment) => segment === valueKey);
+  }
+
+  return basename.endsWith(valueKey);
+}
+
+function addLocalArtifactIssues(
+  localArtifacts: unknown,
+  declaredPaths: readonly string[],
+  issues: ManifestIssue[],
+): void {
+  if (!Array.isArray(localArtifacts)) {
+    return;
+  }
+
+  const seen = new Set<string>();
+  let previous:
+    | {
+        rank: number;
+        key: string;
+      }
+    | undefined;
+
+  for (const [index, rule] of localArtifacts.entries()) {
+    if (!isRecord(rule)) {
+      continue;
+    }
+
+    const rulePath = `$.project.localArtifacts[${index}]`;
+    if (
+      typeof rule.type !== 'string' ||
+      !localArtifactTypeOrder.has(rule.type)
+    ) {
+      addInvalidLocalArtifactIssues(rule, rulePath, issues);
+    }
+
+    const ruleValue = localArtifactRuleValue(rule);
+    if (ruleValue === undefined) {
+      continue;
+    }
+
+    const path = `$.project.localArtifacts[${index}].${ruleValue.property}`;
+    const key = filesystemCollisionKey(ruleValue.value);
+    const identity = `${ruleValue.type}\0${key}`;
+    if (seen.has(identity)) {
+      issues.push({
+        path,
+        message:
+          'Local-artifact rules must be unique after NFC normalization and case folding',
+      });
+    } else {
+      seen.add(identity);
+    }
+
+    if (
+      previous !== undefined &&
+      (previous.rank > ruleValue.rank ||
+        (previous.rank === ruleValue.rank &&
+          compareText(previous.key, key) > 0))
+    ) {
+      issues.push({
+        path,
+        message:
+          'Local-artifact rules must use deterministic type and value order',
+      });
+    }
+    previous = {
+      rank: ruleValue.rank,
+      key,
+    };
+
+    if (
+      ((ruleValue.type === 'file' ||
+        ruleValue.type === 'directory') &&
+        targetsRepositoryGitMetadata(ruleValue.value)) ||
+      ((ruleValue.type === 'directory-name' ||
+        ruleValue.type === 'file-suffix') &&
+        key === '.git')
+    ) {
+      issues.push({
+        path,
+        message:
+          'Repository-root .git metadata is excluded by CLI infrastructure policy',
+      });
+    }
+
+    if (
+      declaredPaths.some((declaredPath) =>
+        localArtifactMatchesPath(ruleValue, declaredPath),
+      )
+    ) {
+      issues.push({
+        path,
+        message: 'Local-artifact rule must not match a course-tree file',
+      });
+    }
+  }
 }
 
 function addSemanticIssues(input: unknown, issues: ManifestIssue[]): void {
   if (!isRecord(input)) {
     return;
+  }
+
+  const declaredPaths = addCourseTreeIssues(input.recoveryStates, issues);
+  if (isRecord(input.project)) {
+    addLocalArtifactIssues(
+      input.project.localArtifacts,
+      declaredPaths,
+      issues,
+    );
   }
 
   const release = input.release;

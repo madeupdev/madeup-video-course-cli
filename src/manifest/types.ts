@@ -1,10 +1,40 @@
+export type CourseTreeFile = {
+  path: string;
+  mode: 0o644 | 0o755;
+  sha256: string;
+};
+
+export type CourseTree = {
+  algorithm: 'course-tree-v1';
+  files: CourseTreeFile[];
+};
+
 export type RecoveryState = {
   id: string;
   sourceCommit: string;
   asset: string;
   sha256: string;
+  tree: CourseTree;
   verification: string[];
 };
+
+export type LocalArtifactRule =
+  | {
+      type: 'file';
+      path: string;
+    }
+  | {
+      type: 'directory';
+      path: string;
+    }
+  | {
+      type: 'directory-name';
+      name: string;
+    }
+  | {
+      type: 'file-suffix';
+      suffix: string;
+    };
 
 export type AddOperation = {
   type: 'add';
@@ -45,6 +75,7 @@ export type CourseManifest = {
   project: {
     packageName: '@madeup-video/storefront';
     repository: string;
+    localArtifacts: LocalArtifactRule[];
   };
   release: {
     repository: string;

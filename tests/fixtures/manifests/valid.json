@@ -3,7 +3,53 @@
   "courseVersion": "1.0.0",
   "project": {
     "packageName": "@madeup-video/storefront",
-    "repository": "https://github.com/madeupdev/madeup-video-storefront"
+    "repository": "https://github.com/madeupdev/madeup-video-storefront",
+    "localArtifacts": [
+      {
+        "type": "file",
+        "path": ".env"
+      },
+      {
+        "type": "file",
+        "path": ".env.local"
+      },
+      {
+        "type": "file",
+        "path": ".env.test"
+      },
+      {
+        "type": "file",
+        "path": "next-env.d.ts"
+      },
+      {
+        "type": "directory",
+        "path": "generated/prisma"
+      },
+      {
+        "type": "directory",
+        "path": "playwright-report"
+      },
+      {
+        "type": "directory",
+        "path": "test-results"
+      },
+      {
+        "type": "directory-name",
+        "name": ".next"
+      },
+      {
+        "type": "directory-name",
+        "name": "coverage"
+      },
+      {
+        "type": "directory-name",
+        "name": "node_modules"
+      },
+      {
+        "type": "file-suffix",
+        "suffix": ".tsbuildinfo"
+      }
+    ]
   },
   "release": {
     "repository": "https://github.com/madeupdev/madeup-video-storefront",
@@ -15,6 +61,41 @@
       "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "asset": "fixture-start.tar.gz",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [
+          {
+            "path": ".env.example",
+            "mode": 420,
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "path": "apps/storefront/src/main.ts",
+            "mode": 420,
+            "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "path": "migrations/001-initial.sql",
+            "mode": 420,
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "path": "package.json",
+            "mode": 420,
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "mode": 420,
+            "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+          },
+          {
+            "path": "scripts/verify.sh",
+            "mode": 493,
+            "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+          }
+        ]
+      },
       "verification": [
         "pnpm test"
       ]
@@ -24,6 +105,41 @@
       "sourceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "asset": "fixture-result.tar.gz",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [
+          {
+            "path": ".env.example",
+            "mode": 420,
+            "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "path": "apps/storefront/src/main.ts",
+            "mode": 420,
+            "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+          },
+          {
+            "path": "migrations/001-initial.sql",
+            "mode": 420,
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+          },
+          {
+            "path": "package.json",
+            "mode": 420,
+            "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+          },
+          {
+            "path": "pnpm-lock.yaml",
+            "mode": 420,
+            "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+          },
+          {
+            "path": "scripts/verify.sh",
+            "mode": 493,
+            "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+          }
+        ]
+      },
       "verification": [
         "pnpm test"
       ]
