@@ -9,10 +9,20 @@ is not a general-purpose project scaffolder.
 This repository currently contains the CLI foundation, internal delivery
 manifest validation and loading—including canonical course-tree inventories
 and the narrow local-artifact policy—and a safe internal layer for inspecting
-project identity, repository-relative files, fingerprints, and Git state. The
-executable supports `--help`, but no learner-facing course operation is
-implemented yet. In particular, recipes and recovery states cannot be applied,
-diagnosed, recovered, or created by this development version.
+project identity, repository-relative files, fingerprints, and Git state.
+
+The `doctor` command is implemented, wired through the executable, and covered
+by tests. Given a registered course manifest, it locates the course project,
+checks its identity and Git worktree, compares the managed tree with known
+recovery states, reports file mismatches and available prepared steps, and
+checks the pinned Node.js version.
+
+The packed development version contains the compiled `doctor` implementation,
+but it is not operational yet because the version-matched course manifest has
+not been registered under `recovery/` and therefore is not bundled with the
+package. Without that manifest, the command exits with a
+course-manifest-unavailable diagnosis. The `apply` and `recover` commands are
+not implemented yet.
 
 The planned learner-facing interface is:
 
@@ -23,8 +33,9 @@ doctor
 recover <state> --directory <new-directory>
 ```
 
-These commands are documented as the intended interface only. They are not
-currently usable.
+This remains the intended learner-facing interface. Only `doctor` is currently
+implemented, and it will become usable from the package once its version-matched
+course manifest is bundled. The other learner-facing operations remain planned.
 
 Do not publish `0.0.0-development` from this task.
 
