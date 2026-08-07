@@ -114,6 +114,7 @@ function sanitizedGitEnvironment(): NodeJS.ProcessEnv {
 
   environment.LANG = 'C';
   environment.LC_ALL = 'C';
+  environment.GIT_OPTIONAL_LOCKS = '0';
   return environment;
 }
 

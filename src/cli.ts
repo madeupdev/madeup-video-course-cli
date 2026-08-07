@@ -5,6 +5,7 @@ import { dirname, parse, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { DoctorOptions } from './commands/doctor.js';
+import type { ApplyOptions } from './commands/apply.js';
 
 export type CliIo = {
   stdout: (text: string) => void;
@@ -12,6 +13,7 @@ export type CliIo = {
 };
 
 export type CliDependencies = {
+  apply?: ApplyOptions;
   doctor?: DoctorOptions;
 };
 
@@ -84,6 +86,18 @@ export async function loadBundledDoctorOptions(
   };
 }
 
+export async function loadBundledApplyOptions(
+  input: BundledDoctorOptionsInput,
+): Promise<ApplyOptions> {
+  const doctorOptions = await loadBundledDoctorOptions(input);
+  return {
+    startDirectory: doctorOptions.startDirectory,
+    workingBoundary: doctorOptions.workingBoundary,
+    sourceRoot: dirname(dirname(fileURLToPath(input.moduleUrl))),
+    manifest: doctorOptions.manifest,
+  };
+}
+
 const HELP_TEXT = `Prepared-code and project-recovery infrastructure for the Made Up Video advanced monorepos course.
 
 Usage:
@@ -129,6 +143,31 @@ export async function runCli(
     }
     const { runDoctor } = await import('./commands/doctor.js');
     return (await runDoctor(doctorOptions, io)).exitCode;
+  }
+
+  if (
+    args.length === 3 &&
+    args[0] === 'apply' &&
+    args[1] !== undefined &&
+    args[2] === '--dry-run'
+  ) {
+    let applyOptions = dependencies.apply;
+    if (applyOptions === undefined) {
+      try {
+        applyOptions = await loadBundledApplyOptions({
+          moduleUrl: new URL(import.meta.url),
+          startDirectory: process.cwd(),
+          nodeVersion: process.versions.node,
+          platform: process.platform,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        io.stderr(`Course manifest unavailable. ${message}`);
+        return 1;
+      }
+    }
+    const { runApplyDryRun } = await import('./commands/apply.js');
+    return (await runApplyDryRun(args[1], applyOptions, io)).exitCode;
   }
 
   const command = args[0] ?? '(none)';
