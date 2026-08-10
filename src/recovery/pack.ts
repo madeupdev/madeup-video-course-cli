@@ -531,6 +531,22 @@ function sha256(contents: Buffer): string {
   return createHash('sha256').update(contents).digest('hex');
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function combinedFailure(
+  primary: unknown,
+  secondary: unknown,
+  context: string,
+): AggregateError {
+  return new AggregateError(
+    [primary, secondary],
+    `${context}; original failure: ${errorMessage(primary)}; secondary failure: ${errorMessage(secondary)}`,
+    { cause: primary },
+  );
+}
+
 async function promoteDirectory(staging: string, output: string): Promise<void> {
   let outputExists = false;
   try {
@@ -548,11 +564,37 @@ async function promoteDirectory(staging: string, output: string): Promise<void> 
   await rename(output, backup);
   try {
     await rename(staging, output);
-  } catch (error) {
-    await rename(backup, output);
-    throw error;
+  } catch (promotionError) {
+    try {
+      await rename(backup, output);
+    } catch (rollbackError) {
+      throw combinedFailure(
+        promotionError,
+        rollbackError,
+        'Recovery output promotion and rollback both failed',
+      );
+    }
+    throw promotionError;
   }
-  await rm(backup, { force: true, recursive: true });
+
+  try {
+    // Backup removal is inside the transaction boundary. If it fails, the
+    // replacement returns to the same private staging path before the prior
+    // output is restored, keeping every rename within the validated parent.
+    await rm(backup, { force: true, recursive: true });
+  } catch (cleanupError) {
+    try {
+      await rename(output, staging);
+      await rename(backup, output);
+    } catch (rollbackError) {
+      throw combinedFailure(
+        cleanupError,
+        rollbackError,
+        'Recovery output backup cleanup and rollback both failed',
+      );
+    }
+    throw cleanupError;
+  }
 }
 
 export async function buildRecoveryAssets(
@@ -577,7 +619,6 @@ export async function buildRecoveryAssets(
   const parent = resolve(output, '..');
   await mkdir(parent, { recursive: true, mode: 0o700 });
   const staging = await mkdtemp(join(parent, `.${parse(output).base}.staging-`));
-  let promoted = false;
   try {
     const assets: RecoveryAssetMetadata[] = [];
     for (const prepared of preparedStates) {
@@ -615,9 +656,17 @@ export async function buildRecoveryAssets(
       { mode: 0o600 },
     );
     await promoteDirectory(staging, output);
-    promoted = true;
     return { outputDirectory: output, assets };
-  } finally {
-    if (!promoted) await rm(staging, { force: true, recursive: true });
+  } catch (buildFailure) {
+    try {
+      await rm(staging, { force: true, recursive: true });
+    } catch (cleanupError) {
+      throw combinedFailure(
+        buildFailure,
+        cleanupError,
+        'Recovery asset build and staging cleanup both failed',
+      );
+    }
+    throw buildFailure;
   }
 }

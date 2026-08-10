@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildRecoveryAssets,
@@ -34,11 +34,38 @@ const FIXTURE_DIRECTORY = fileURLToPath(
   new URL('../fixtures/repository', import.meta.url),
 );
 const temporaryDirectories: string[] = [];
+const injectedFilesystemFailure = vi.hoisted(() => ({
+  backupCleanup: false,
+}));
+
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>(
+    'node:fs/promises',
+  );
+  return {
+    ...actual,
+    rm: async (
+      path: Parameters<typeof actual.rm>[0],
+      options: Parameters<typeof actual.rm>[1],
+    ) => {
+      if (
+        injectedFilesystemFailure.backupCleanup &&
+        String(path).includes('.backup-')
+      ) {
+        throw Object.assign(new Error('injected backup cleanup failure'), {
+          code: 'EACCES',
+        });
+      }
+      return actual.rm(path, options);
+    },
+  };
+});
 
 type MutableRegister = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
 afterEach(async () => {
+  injectedFilesystemFailure.backupCleanup = false;
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -299,6 +326,29 @@ describe('deterministic recovery archive packing', () => {
     expect(await readFile(join(fixture.output, 'SHA256SUMS'), 'utf8')).toBe(
       `${result.assets[0]?.sha256}  fixture-start.tar.gz\n`,
     );
+  });
+
+  it('restores an existing output when backup cleanup fails', async () => {
+    const fixture = await createFixture();
+    const previousBytes = Buffer.from([0, 1, 2, 255]);
+    await mkdir(fixture.output);
+    await writeFile(join(fixture.output, 'existing.bin'), previousBytes);
+    injectedFilesystemFailure.backupCleanup = true;
+
+    await expect(buildRecoveryAssets(options(fixture))).rejects.toThrow(
+      'injected backup cleanup failure',
+    );
+    injectedFilesystemFailure.backupCleanup = false;
+
+    expect(await readdir(fixture.output)).toEqual(['existing.bin']);
+    expect(await readFile(join(fixture.output, 'existing.bin'))).toEqual(
+      previousBytes,
+    );
+    expect(
+      (await readdir(fixture.root)).filter((name) =>
+        /\.(?:backup|staging|replacement)-/u.test(name),
+      ),
+    ).toEqual([]);
   });
 
   it('preflights malformed JSON without creating a missing output', async () => {
