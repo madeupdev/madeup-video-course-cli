@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "courseVersion": "1.0.0",
+  "project": {
+    "packageName": "@madeup-video/storefront",
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "localArtifacts": [
+      {
+        "type": "file",
+        "path": ".env"
+      },
+      {
+        "type": "file",
+        "path": ".env.local"
+      },
+      {
+        "type": "file",
+        "path": ".env.test"
+      },
+      {
+        "type": "file",
+        "path": "next-env.d.ts"
+      },
+      {
+        "type": "directory",
+        "path": "generated/prisma"
+      },
+      {
+        "type": "directory",
+        "path": "playwright-report"
+      },
+      {
+        "type": "directory",
+        "path": "test-results"
+      },
+      {
+        "type": "directory-name",
+        "name": ".next"
+      },
+      {
+        "type": "directory-name",
+        "name": "coverage"
+      },
+      {
+        "type": "directory-name",
+        "name": "node_modules"
+      },
+      {
+        "type": "file-suffix",
+        "suffix": ".tsbuildinfo"
+      }
+    ]
+  },
+  "release": {
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "tag": "course-v1.0.0",
+    "maxAssetBytes": 104857600
+  },
+  "recoveryStates": [],
+  "recipes": []
+}
