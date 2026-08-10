@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { DoctorOptions } from './commands/doctor.js';
 import type { ApplyOptions } from './commands/apply.js';
+import type { RecoverOptions } from './commands/recover.js';
 
 export type CliIo = {
   stdout: (text: string) => void;
@@ -16,6 +17,7 @@ export type CliIo = {
 export type CliDependencies = {
   apply?: ApplyOptions;
   doctor?: DoctorOptions;
+  recover?: Omit<RecoverOptions, 'destination'>;
 };
 
 export type BundledDoctorOptionsInput = {
@@ -96,6 +98,17 @@ export async function loadBundledApplyOptions(
     workingBoundary: doctorOptions.workingBoundary,
     sourceRoot: dirname(dirname(fileURLToPath(input.moduleUrl))),
     manifest: doctorOptions.manifest,
+  };
+}
+
+export async function loadBundledRecoverOptions(
+  input: BundledDoctorOptionsInput,
+): Promise<Omit<RecoverOptions, 'destination'>> {
+  const doctorOptions = await loadBundledDoctorOptions(input);
+  return {
+    manifest: doctorOptions.manifest,
+    cliVersion: doctorOptions.cliVersion,
+    platform: doctorOptions.platform,
   };
 }
 
@@ -200,6 +213,35 @@ export async function runCli(
     return result.kind === 'applied' || result.kind === 'already-applied'
       ? 0
       : 1;
+  }
+
+  if (
+    args.length === 4 &&
+    args[0] === 'recover' &&
+    args[1] !== undefined &&
+    args[2] === '--directory' &&
+    args[3] !== undefined
+  ) {
+    let recoverOptions = dependencies.recover;
+    if (recoverOptions === undefined) {
+      try {
+        recoverOptions = await loadBundledRecoverOptions({
+          moduleUrl: new URL(import.meta.url),
+          startDirectory: process.cwd(),
+          nodeVersion: process.versions.node,
+          platform: process.platform,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        io.stderr(`Course manifest unavailable. ${message}`);
+        return 1;
+      }
+    }
+    const { runRecover } = await import('./commands/recover.js');
+    return (await runRecover(args[1], {
+      ...recoverOptions,
+      destination: args[3],
+    }, io)).exitCode;
   }
 
   const command = args[0] ?? '(none)';

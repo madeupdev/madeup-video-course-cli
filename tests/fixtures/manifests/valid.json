@@ -53,7 +53,8 @@
   },
   "release": {
     "repository": "https://github.com/madeupdev/madeup-video-storefront",
-    "tag": "course-v1.0.0"
+    "tag": "course-v1.0.0",
+    "maxAssetBytes": 104857600
   },
   "recoveryStates": [
     {

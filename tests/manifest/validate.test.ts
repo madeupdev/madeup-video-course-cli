@@ -52,6 +52,7 @@ describe('validateManifest', () => {
 
     const manifest: CourseManifest = result.manifest;
     expect(manifest.schemaVersion).toBe(1);
+    expect(manifest.release.maxAssetBytes).toBe(104857600);
     expect(manifest.project.localArtifacts).toEqual(
       expect.arrayContaining([
         { type: 'directory-name', name: 'node_modules' },
@@ -108,6 +109,26 @@ describe('validateManifest', () => {
     input.release.tag = 'course-v2.0.0';
 
     expect(issuePaths(input)).toContain('$.release.tag');
+  });
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity])(
+    'rejects unsafe maximum asset size %s',
+    (maxAssetBytes) => {
+      const input = freshManifest();
+      input.release.maxAssetBytes = maxAssetBytes;
+
+      expect(issuePaths(input)).toContain('$.release.maxAssetBytes');
+    },
+  );
+
+  it('requires a manifest-declared maximum asset size', () => {
+    const input = freshManifest();
+    input.release = withoutProperty(
+      input.release,
+      'maxAssetBytes',
+    ) as CourseManifest['release'];
+
+    expect(issuePaths(input)).toContain('$.release.maxAssetBytes');
   });
 
   it.each([

@@ -71,6 +71,7 @@ function manifest(
     release: {
       repository: 'https://github.com/madeupdev/madeup-video-storefront',
       tag: 'course-v1.0.0',
+      maxAssetBytes: 1024 * 1024,
     },
     recoveryStates: states.map(({ id, files }, index) => ({
       id,

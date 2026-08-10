@@ -33,13 +33,30 @@ checks its identity and Git worktree, compares the managed tree with known
 recovery states, reports file mismatches and available prepared steps, and
 checks the pinned Node.js version.
 
-`recover <state> --directory <new-directory>` is not implemented yet.
+`recover <state> --directory <new-directory>` downloads the exact immutable
+release asset declared for a recovery state, enforces the fixed GitHub redirect
+policy and manifest size limit, verifies the asset digest, inspects every
+archive header, extracts into a temporary sibling, verifies the complete tree,
+and only then renames it to a destination that did not already exist.
 
-The packed development version contains the compiled `apply` and `doctor`
-implementations. It remains non-operational for real course projects until the
-version-matched course manifest and its prepared-code and recovery assets are
-registered and bundled with the package. Without that manifest, commands exit
-with a course-manifest-unavailable diagnosis.
+Recovery manifests declare the maximum permitted compressed asset size at the
+release level. The value is a required safe positive integer in bytes:
+
+```json
+{
+  "release": {
+    "repository": "https://github.com/madeupdev/madeup-video-storefront",
+    "tag": "course-v1.0.0",
+    "maxAssetBytes": 104857600
+  }
+}
+```
+
+The packed development version contains the compiled `apply`, `doctor`, and
+`recover` implementations. It remains non-operational for real course projects
+until the version-matched course manifest and its prepared-code and recovery
+assets are registered and bundled with the package. Without that manifest,
+commands exit with a course-manifest-unavailable diagnosis.
 
 The complete intended learner-facing interface is:
 
@@ -60,6 +77,7 @@ The `0.0.0-development` package must not be published.
 - TypeScript 6.0.3
 - Vitest 4.1.10
 - ESLint 9.39.5
+- tar-stream 3.2.0
 
 The runtime and package-manager versions are pinned in `.tool-versions` and
 `package.json`. Exact development dependency versions are recorded in

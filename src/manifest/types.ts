@@ -80,6 +80,7 @@ export type CourseManifest = {
   release: {
     repository: string;
     tag: string;
+    maxAssetBytes: number;
   };
   recoveryStates: RecoveryState[];
   recipes: Recipe[];

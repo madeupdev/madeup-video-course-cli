@@ -293,6 +293,11 @@ const courseManifestSchema = z.strictObject({
   release: z.strictObject({
     repository: repositoryUrl,
     tag: nonEmptyText,
+    maxAssetBytes: z
+      .number()
+      .int('Must be an integer')
+      .positive('Must be greater than zero')
+      .max(Number.MAX_SAFE_INTEGER, 'Must be a safe integer'),
   }),
   recoveryStates: z.array(recoveryStateSchema),
   recipes: z.array(recipeSchema),
