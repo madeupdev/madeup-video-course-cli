@@ -45,9 +45,16 @@ export type RecoveryAssetMetadata = Readonly<{
   sha256: string;
 }>;
 
+export type RecoveryAssetBuildWarning = Readonly<{
+  kind: 'backup-cleanup-failed';
+  backupPath: string;
+  message: string;
+}>;
+
 export type BuildRecoveryAssetsResult = Readonly<{
   outputDirectory: string;
   assets: RecoveryAssetMetadata[];
+  warnings: RecoveryAssetBuildWarning[];
 }>;
 
 type GitTreeFile = Readonly<{
@@ -547,7 +554,10 @@ function combinedFailure(
   );
 }
 
-async function promoteDirectory(staging: string, output: string): Promise<void> {
+async function promoteDirectory(
+  staging: string,
+  output: string,
+): Promise<RecoveryAssetBuildWarning[]> {
   let outputExists = false;
   try {
     await lstat(output);
@@ -557,7 +567,7 @@ async function promoteDirectory(staging: string, output: string): Promise<void> 
   }
   if (!outputExists) {
     await rename(staging, output);
-    return;
+    return [];
   }
 
   const backup = join(resolve(output, '..'), `.${parse(output).base}.backup-${randomUUID()}`);
@@ -577,23 +587,17 @@ async function promoteDirectory(staging: string, output: string): Promise<void> 
     throw promotionError;
   }
 
+  // The staged-output rename above is the commit point. Recursive backup
+  // cleanup may be partial, so it must never trigger rollback afterward.
   try {
-    // Backup removal is inside the transaction boundary. If it fails, the
-    // replacement returns to the same private staging path before the prior
-    // output is restored, keeping every rename within the validated parent.
     await rm(backup, { force: true, recursive: true });
+    return [];
   } catch (cleanupError) {
-    try {
-      await rename(output, staging);
-      await rename(backup, output);
-    } catch (rollbackError) {
-      throw combinedFailure(
-        cleanupError,
-        rollbackError,
-        'Recovery output backup cleanup and rollback both failed',
-      );
-    }
-    throw cleanupError;
+    return [{
+      kind: 'backup-cleanup-failed',
+      backupPath: backup,
+      message: errorMessage(cleanupError),
+    }];
   }
 }
 
@@ -655,8 +659,8 @@ export async function buildRecoveryAssets(
       assets.map((asset) => `${asset.sha256}  ${asset.asset}\n`).join(''),
       { mode: 0o600 },
     );
-    await promoteDirectory(staging, output);
-    return { outputDirectory: output, assets };
+    const warnings = await promoteDirectory(staging, output);
+    return { outputDirectory: output, assets, warnings };
   } catch (buildFailure) {
     try {
       await rm(staging, { force: true, recursive: true });

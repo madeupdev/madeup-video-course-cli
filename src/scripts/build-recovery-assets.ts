@@ -93,6 +93,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   process.stdout.write(
     `Built ${String(result.assets.length)} deterministic recovery archives in ${result.outputDirectory}\n`,
   );
+  for (const warning of result.warnings) {
+    process.stderr.write(
+      `Warning: backup cleanup failed after recovery assets committed; retained backup: ${warning.backupPath}; ${warning.message}\n`,
+    );
+  }
 }
 
 const entryPoint = process.argv[1];

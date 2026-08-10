@@ -24,6 +24,7 @@ import {
   buildRecoveryAssets,
   type BuildRecoveryAssetsOptions,
 } from '../../src/recovery/pack.js';
+import { main as buildRecoveryAssetsMain } from '../../src/scripts/build-recovery-assets.js';
 import { extractRecoveryArchive } from '../../src/recovery/extract.js';
 
 const CLI_REPOSITORY =
@@ -35,28 +36,45 @@ const FIXTURE_DIRECTORY = fileURLToPath(
 );
 const temporaryDirectories: string[] = [];
 const injectedFilesystemFailure = vi.hoisted(() => ({
-  backupCleanup: false,
+  backupCleanup: false as false | 'partial',
+  promotion: false,
 }));
 
 vi.mock('node:fs/promises', async () => {
   const actual = await vi.importActual<typeof import('node:fs/promises')>(
     'node:fs/promises',
   );
+  const path = await vi.importActual<typeof import('node:path')>('node:path');
   return {
     ...actual,
+    rename: async (
+      oldPath: Parameters<typeof actual.rename>[0],
+      newPath: Parameters<typeof actual.rename>[1],
+    ) => {
+      if (
+        injectedFilesystemFailure.promotion &&
+        String(oldPath).includes('.staging-')
+      ) {
+        throw Object.assign(new Error('injected promotion failure'), {
+          code: 'EIO',
+        });
+      }
+      return actual.rename(oldPath, newPath);
+    },
     rm: async (
-      path: Parameters<typeof actual.rm>[0],
+      target: Parameters<typeof actual.rm>[0],
       options: Parameters<typeof actual.rm>[1],
     ) => {
       if (
-        injectedFilesystemFailure.backupCleanup &&
-        String(path).includes('.backup-')
+        injectedFilesystemFailure.backupCleanup === 'partial' &&
+        String(target).includes('.backup-')
       ) {
-        throw Object.assign(new Error('injected backup cleanup failure'), {
+        await actual.rm(path.join(String(target), 'keep.json'), { force: true });
+        throw Object.assign(new Error('injected partial backup cleanup failure'), {
           code: 'EACCES',
         });
       }
-      return actual.rm(path, options);
+      return actual.rm(target, options);
     },
   };
 });
@@ -66,6 +84,8 @@ type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
 afterEach(async () => {
   injectedFilesystemFailure.backupCleanup = false;
+  injectedFilesystemFailure.promotion = false;
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -328,27 +348,114 @@ describe('deterministic recovery archive packing', () => {
     );
   });
 
-  it('restores an existing output when backup cleanup fails', async () => {
+  it('replaces an existing output and removes its backup after successful cleanup', async () => {
+    const fixture = await createFixture();
+    await mkdir(fixture.output);
+    await writeFile(join(fixture.output, 'keep.json'), 'old bytes\n');
+
+    const result = await buildRecoveryAssets(options(fixture));
+
+    expect(result.warnings).toEqual([]);
+    expect(await readdir(fixture.output)).toEqual([
+      'SHA256SUMS',
+      'fixture-start.tar.gz',
+      'manifest.json',
+    ]);
+    expect(
+      (await readdir(fixture.root)).filter((name) =>
+        /\.(?:backup|staging)-/u.test(name),
+      ),
+    ).toEqual([]);
+  });
+
+  it('restores an untouched existing output when promotion fails before commit', async () => {
     const fixture = await createFixture();
     const previousBytes = Buffer.from([0, 1, 2, 255]);
     await mkdir(fixture.output);
-    await writeFile(join(fixture.output, 'existing.bin'), previousBytes);
-    injectedFilesystemFailure.backupCleanup = true;
+    await writeFile(join(fixture.output, 'keep.json'), previousBytes);
+    injectedFilesystemFailure.promotion = true;
 
     await expect(buildRecoveryAssets(options(fixture))).rejects.toThrow(
-      'injected backup cleanup failure',
+      'injected promotion failure',
     );
-    injectedFilesystemFailure.backupCleanup = false;
+    injectedFilesystemFailure.promotion = false;
 
-    expect(await readdir(fixture.output)).toEqual(['existing.bin']);
-    expect(await readFile(join(fixture.output, 'existing.bin'))).toEqual(
+    expect(await readdir(fixture.output)).toEqual(['keep.json']);
+    expect(await readFile(join(fixture.output, 'keep.json'))).toEqual(
       previousBytes,
     );
     expect(
       (await readdir(fixture.root)).filter((name) =>
-        /\.(?:backup|staging|replacement)-/u.test(name),
+        /\.(?:backup|staging)-/u.test(name),
       ),
     ).toEqual([]);
+  });
+
+  it('keeps committed output and warns when backup cleanup partially fails', async () => {
+    const fixture = await createFixture();
+    await mkdir(fixture.output);
+    await writeFile(join(fixture.output, 'keep.json'), 'old removable bytes\n');
+    await mkdir(join(fixture.output, 'retained'));
+    await writeFile(join(fixture.output, 'retained/old.json'), 'old retained bytes\n');
+    injectedFilesystemFailure.backupCleanup = 'partial';
+
+    const outcome = await buildRecoveryAssets(options(fixture)).then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error }),
+    );
+    injectedFilesystemFailure.backupCleanup = false;
+
+    expect(await readdir(fixture.output)).toEqual([
+      'SHA256SUMS',
+      'fixture-start.tar.gz',
+      'manifest.json',
+    ]);
+    expect(outcome).toHaveProperty('result');
+    if (!('result' in outcome)) return;
+    expect(outcome.result.assets).toHaveLength(1);
+    expect(outcome.result.warnings).toHaveLength(1);
+    expect(outcome.result.warnings[0]).toMatchObject({
+      kind: 'backup-cleanup-failed',
+      message: 'injected partial backup cleanup failure',
+    });
+    const backupPath = outcome.result.warnings[0]?.backupPath;
+    expect(backupPath).toBeTypeOf('string');
+    if (backupPath === undefined) return;
+    expect(dirname(backupPath)).toBe(fixture.root);
+    expect(await readdir(backupPath)).toEqual(['retained']);
+    expect(await readFile(join(backupPath, 'retained/old.json'), 'utf8')).toBe(
+      'old retained bytes\n',
+    );
+    expect(
+      (await readdir(fixture.root)).filter((name) => name.includes('.staging-')),
+    ).toEqual([]);
+  });
+
+  it('prints post-commit cleanup warnings without failing the command', async () => {
+    const fixture = await createFixture();
+    await mkdir(fixture.output);
+    await writeFile(join(fixture.output, 'keep.json'), 'old removable bytes\n');
+    await mkdir(join(fixture.output, 'retained'));
+    await writeFile(join(fixture.output, 'retained/old.json'), 'old retained bytes\n');
+    const standardOutput = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const standardError = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    injectedFilesystemFailure.backupCleanup = 'partial';
+
+    await expect(buildRecoveryAssetsMain([
+      '--project', fixture.project,
+      '--register', fixture.registerPath,
+      '--output', fixture.output,
+    ])).resolves.toBeUndefined();
+    injectedFilesystemFailure.backupCleanup = false;
+
+    expect(standardOutput).toHaveBeenCalledWith(
+      expect.stringContaining('Built 1 deterministic recovery archives'),
+    );
+    expect(standardError).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /Warning: backup cleanup failed after recovery assets committed.*\.backup-.*injected partial backup cleanup failure/u,
+      ),
+    );
   });
 
   it('preflights malformed JSON without creating a missing output', async () => {
