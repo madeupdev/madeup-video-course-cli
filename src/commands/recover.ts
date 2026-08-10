@@ -84,9 +84,8 @@ export async function runRecover(
     io.stdout(`CLI version: ${cliVersion}`);
     io.stdout(`Source commit: ${state.sourceCommit}`);
     io.stdout(`Verified asset digest: ${download.sha256}`);
-    io.stdout(`Destination: ${destination}`);
-    io.stdout('Initial setup:');
-    io.stdout(`  cd ${JSON.stringify(destination)}`);
+    io.stdout(`Destination: ${JSON.stringify(destination)}`);
+    io.stdout('From the recovered directory shown above, run:');
     io.stdout('  pnpm install --frozen-lockfile');
     io.stdout('State verification:');
     for (const command of state.verification) io.stdout(`  ${command}`);

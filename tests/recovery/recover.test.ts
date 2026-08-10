@@ -177,9 +177,44 @@ describe('recover command', () => {
     expect(output).toContain('CLI version: 1.0.0');
     expect(output).toContain(`Source commit: ${'a'.repeat(40)}`);
     expect(output).toContain(`Verified asset digest: ${fixture.manifest.recoveryStates[0]!.sha256}`);
-    expect(output).toContain(`Destination: ${fixture.destination}`);
+    expect(output).toContain(
+      `Destination: ${JSON.stringify(fixture.destination)}`,
+    );
+    expect(output).toContain(
+      'From the recovered directory shown above, run:',
+    );
     expect(output).toContain('pnpm install --frozen-lockfile');
     expect(output).toContain('pnpm test');
+  });
+
+  it('displays a shell-sensitive destination only as informational data', async () => {
+    const fixture = await recoveryFixture();
+    const destination = join(
+      fixture.root,
+      'recovered-$HOME-`whoami`-$(touch unexpected)',
+    );
+    const stdout: string[] = [];
+
+    const result = await runRecover('fixture-start', {
+      manifest: fixture.manifest,
+      destination,
+      platform: process.platform,
+    }, { stdout: (line) => stdout.push(line), stderr: () => undefined });
+
+    expect(result.exitCode).toBe(0);
+    expect(stdout.filter((line) => line.includes(destination))).toEqual([
+      `Destination: ${JSON.stringify(destination)}`,
+    ]);
+    const commandHeading = stdout.indexOf(
+      'From the recovered directory shown above, run:',
+    );
+    expect(commandHeading).toBeGreaterThan(-1);
+    expect(stdout.slice(commandHeading + 1)).toEqual([
+      '  pnpm install --frozen-lockfile',
+      'State verification:',
+      '  pnpm test',
+    ]);
+    expect(stdout.join('\n')).not.toContain('  cd ');
   });
 
   it('routes recover <state> --directory <new-directory> through the CLI', async () => {
