@@ -6,10 +6,26 @@ is not a general-purpose project scaffolder.
 
 ## Development status
 
-This repository currently contains the CLI foundation, internal delivery
-manifest validation and loading—including canonical course-tree inventories
-and the narrow local-artifact policy—and a safe internal layer for inspecting
-project identity, repository-relative files, fingerprints, and Git state.
+This repository contains the CLI foundation, internal delivery manifest
+validation and loading—including canonical course-tree inventories and the
+narrow local-artifact policy—and a safe internal layer for inspecting project
+identity, repository-relative files, fingerprints, and Git state.
+
+The following learner-facing commands are implemented:
+
+```text
+apply <recipe>
+apply <recipe> --yes
+apply <recipe> --dry-run
+doctor
+```
+
+`apply` validates the complete change plan before writing, prints a
+deterministic preview, and requires either interactive consent or the explicit
+`--yes` option. It applies additions, replacements, and deletions as a
+transaction, verifies resulting hashes and modes, rolls changes back after a
+failure, and recognises an already-applied recipe without writing again.
+`--dry-run` performs the strict preflight and preview without changing files.
 
 The `doctor` command is implemented, wired through the executable, and covered
 by tests. Given a registered course manifest, it locates the course project,
@@ -17,27 +33,25 @@ checks its identity and Git worktree, compares the managed tree with known
 recovery states, reports file mismatches and available prepared steps, and
 checks the pinned Node.js version.
 
-The packed development version contains the compiled `doctor` implementation,
-but it is not operational yet because the version-matched course manifest has
-not been registered under `recovery/` and therefore is not bundled with the
-package. Without that manifest, the command exits with a
-course-manifest-unavailable diagnosis. The `apply` and `recover` commands are
-not implemented yet.
+`recover <state> --directory <new-directory>` is not implemented yet.
 
-The planned learner-facing interface is:
+The packed development version contains the compiled `apply` and `doctor`
+implementations. It remains non-operational for real course projects until the
+version-matched course manifest and its prepared-code and recovery assets are
+registered and bundled with the package. Without that manifest, commands exit
+with a course-manifest-unavailable diagnosis.
+
+The complete intended learner-facing interface is:
 
 ```text
 apply <recipe>
+apply <recipe> --yes
 apply <recipe> --dry-run
 doctor
 recover <state> --directory <new-directory>
 ```
 
-This remains the intended learner-facing interface. Only `doctor` is currently
-implemented, and it will become usable from the package once its version-matched
-course manifest is bundled. The other learner-facing operations remain planned.
-
-Do not publish `0.0.0-development` from this task.
+The `0.0.0-development` package must not be published.
 
 ## Toolchain
 

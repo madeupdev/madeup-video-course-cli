@@ -275,13 +275,13 @@ async function planOperation(
       `Destination unavailable: ${fileFailureMessage(inspected.finding)}`,
     );
   }
-  const state = inspected.file.sha256 === operation.beforeSha256
-    ? 'before'
-    : acceptAfterState &&
-        operation.type === 'replace' &&
-        inspected.file.sha256 === operation.afterSha256 &&
-        inspected.file.mode === operation.mode
-      ? 'after'
+  const state = acceptAfterState &&
+      operation.type === 'replace' &&
+      inspected.file.sha256 === operation.afterSha256 &&
+      inspected.file.mode === operation.mode
+    ? 'after'
+    : inspected.file.sha256 === operation.beforeSha256
+      ? 'before'
       : undefined;
   if (state === undefined) {
     return refusal(

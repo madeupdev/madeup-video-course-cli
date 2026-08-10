@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   rm,
+  stat,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,7 +20,7 @@ import { hashBytes } from '../../src/project/hash.js';
 
 const temporaryDirectories: string[] = [];
 
-function git(root: string, args: readonly string[]): void {
+function git(root: string, args: readonly string[]): string {
   const result = spawnSync('git', args, {
     cwd: root,
     encoding: 'utf8',
@@ -28,6 +29,7 @@ function git(root: string, args: readonly string[]): void {
   if (result.status !== 0) {
     throw new Error(result.stderr);
   }
+  return result.stdout;
 }
 
 async function createFixture() {
@@ -254,5 +256,56 @@ describe('apply command', () => {
     expect(stderr.join('\n')).toContain('rollback was incomplete');
     expect(stderr.join('\n')).toContain('injected rollback failure');
     expect(stderr.join('\n')).not.toContain('was rolled back');
+  });
+
+  it('recognises a mode-only replacement as already applied on the second run', async () => {
+    const fixture = await createFixture();
+    const operation = fixture.options.manifest.recipes[0]!.operations[0]!;
+    if (operation.type !== 'replace') {
+      throw new Error('Expected replace operation');
+    }
+    await writeFile(
+      join(fixture.options.sourceRoot, operation.template),
+      fixture.before,
+    );
+    operation.afterSha256 = operation.beforeSha256;
+    git(fixture.projectRoot, ['config', 'core.filemode', 'true']);
+    const io = { stdout: () => undefined, stderr: () => undefined };
+
+    const firstResult = await runApply(
+      'prepared-app',
+      fixture.options,
+      io,
+      { yes: true },
+    );
+
+    expect(firstResult).toEqual({
+      kind: 'applied',
+      changedFiles: [fixture.destination],
+    });
+    expect(await readFile(join(fixture.projectRoot, fixture.destination), 'utf8'))
+      .toBe(fixture.before);
+    expect((await stat(join(fixture.projectRoot, fixture.destination))).mode & 0o777)
+      .toBe(0o755);
+    const beforeSecondRun = {
+      bytes: await readFile(join(fixture.projectRoot, fixture.destination)),
+      mode: (await stat(join(fixture.projectRoot, fixture.destination))).mode & 0o777,
+      gitStatus: git(fixture.projectRoot, ['status', '--porcelain=v1', '-z']),
+    };
+
+    const secondResult = await runApply(
+      'prepared-app',
+      fixture.options,
+      io,
+      { yes: true },
+    );
+
+    expect(secondResult).toEqual({ kind: 'already-applied', changedFiles: [] });
+    expect(await readFile(join(fixture.projectRoot, fixture.destination)))
+      .toEqual(beforeSecondRun.bytes);
+    expect((await stat(join(fixture.projectRoot, fixture.destination))).mode & 0o777)
+      .toBe(beforeSecondRun.mode);
+    expect(git(fixture.projectRoot, ['status', '--porcelain=v1', '-z']))
+      .toBe(beforeSecondRun.gitStatus);
   });
 });
