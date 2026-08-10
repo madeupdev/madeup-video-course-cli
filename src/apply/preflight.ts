@@ -28,6 +28,10 @@ export type ApplyPreflightOptions = {
   manifest: CourseManifest;
 };
 
+export type ApplyPreflightBehavior = Readonly<{
+  acceptAfterState?: boolean;
+}>;
+
 export type ApplyPreflightFailure = Readonly<{
   kind:
     | 'unknown-recipe'
@@ -43,7 +47,8 @@ export type ApplyPreflightFailure = Readonly<{
     | 'destination-unavailable'
     | 'before-hash-mismatch'
     | 'template-unavailable'
-    | 'after-hash-mismatch';
+    | 'after-hash-mismatch'
+    | 'mixed-apply-state';
   message: string;
 }>;
 
@@ -177,8 +182,13 @@ async function planOperation(
   projectRoot: string,
   sourceRoot: string,
   operation: Recipe['operations'][number],
+  acceptAfterState: boolean,
 ): Promise<
-  | Readonly<{ ok: true; operation: PlannedOperation }>
+  | Readonly<{
+      ok: true;
+      operation: PlannedOperation;
+      state: 'before' | 'after';
+    }>
   | ApplyPreflightRefusal
 > {
   const destination = await resolveProjectPath(
@@ -197,12 +207,6 @@ async function planOperation(
         `Unable to inspect add destination ${operation.destination}: ${existence.error}`,
       );
     }
-    if (existence.exists) {
-      return refusal(
-        'add-destination-exists',
-        `Add destination already exists: ${operation.destination}`,
-      );
-    }
     const template = await verifiedTemplate(
       sourceRoot,
       operation.template,
@@ -211,8 +215,28 @@ async function planOperation(
     if (!template.ok) {
       return template;
     }
+    let state: 'before' | 'after' = 'before';
+    if (existence.exists) {
+      const inspected = await inspectProjectFile(
+        projectRoot,
+        operation.destination,
+      );
+      if (
+        !acceptAfterState ||
+        !inspected.ok ||
+        inspected.file.sha256 !== operation.afterSha256 ||
+        inspected.file.mode !== operation.mode
+      ) {
+        return refusal(
+          'add-destination-exists',
+          `Add destination already exists: ${operation.destination}`,
+        );
+      }
+      state = 'after';
+    }
     return Object.freeze({
       ok: true,
+      state,
       operation: Object.freeze({
         ...operation,
         destinationPath: destination.path,
@@ -228,6 +252,16 @@ async function planOperation(
   );
   if (!inspected.ok) {
     if (inspected.finding.kind === 'missing-file') {
+      if (operation.type === 'delete' && acceptAfterState) {
+        return Object.freeze({
+          ok: true,
+          state: 'after',
+          operation: Object.freeze({
+            ...operation,
+            destinationPath: destination.path,
+          }),
+        });
+      }
       const label = operation.type === 'replace' ? 'Replace' : 'Delete';
       return refusal(
         operation.type === 'replace'
@@ -241,7 +275,15 @@ async function planOperation(
       `Destination unavailable: ${fileFailureMessage(inspected.finding)}`,
     );
   }
-  if (inspected.file.sha256 !== operation.beforeSha256) {
+  const state = inspected.file.sha256 === operation.beforeSha256
+    ? 'before'
+    : acceptAfterState &&
+        operation.type === 'replace' &&
+        inspected.file.sha256 === operation.afterSha256 &&
+        inspected.file.mode === operation.mode
+      ? 'after'
+      : undefined;
+  if (state === undefined) {
     return refusal(
       'before-hash-mismatch',
       `Destination ${operation.destination} does not match beforeSha256 ${operation.beforeSha256}; found ${inspected.file.sha256}`,
@@ -251,6 +293,7 @@ async function planOperation(
   if (operation.type === 'delete') {
     return Object.freeze({
       ok: true,
+      state,
       operation: Object.freeze({
         ...operation,
         destinationPath: destination.path,
@@ -268,6 +311,7 @@ async function planOperation(
   }
   return Object.freeze({
     ok: true,
+    state,
     operation: Object.freeze({
       ...operation,
       destinationPath: destination.path,
@@ -280,6 +324,7 @@ async function planOperation(
 export async function preflightApply(
   recipeId: string,
   options: ApplyPreflightOptions,
+  behavior: ApplyPreflightBehavior = {},
 ): Promise<ApplyPreflightResult> {
   const recipe = options.manifest.recipes.find(
     (candidate) => candidate.id === recipeId,
@@ -312,24 +357,49 @@ export async function preflightApply(
       `Unable to inspect Git worktree: ${git.finding.kind}`,
     );
   }
-  if (!git.clean) {
+  if (!behavior.acceptAfterState && !git.clean) {
     return refusal(
       'dirty-worktree',
       `Git worktree must be clean; found ${git.changes.length} change${git.changes.length === 1 ? '' : 's'}.`,
     );
   }
-
   const operations: PlannedOperation[] = [];
+  const states: Array<'before' | 'after'> = [];
   for (const operation of recipe.operations) {
     const planned = await planOperation(
       project.root,
       options.sourceRoot,
       operation,
+      behavior.acceptAfterState === true,
     );
     if (!planned.ok) {
+      if (!git.clean) {
+        return refusal(
+          'dirty-worktree',
+          `Git worktree must be clean; found ${git.changes.length} change${git.changes.length === 1 ? '' : 's'}.`,
+        );
+      }
       return planned;
     }
     operations.push(planned.operation);
+    states.push(planned.state);
+  }
+
+  if (
+    behavior.acceptAfterState &&
+    states.includes('before') &&
+    states.includes('after')
+  ) {
+    return refusal(
+      'mixed-apply-state',
+      'Recipe is partially applied; refusing to write a mixed before/after state.',
+    );
+  }
+  if (states.includes('before') && !git.clean) {
+    return refusal(
+      'dirty-worktree',
+      `Git worktree must be clean; found ${git.changes.length} change${git.changes.length === 1 ? '' : 's'}.`,
+    );
   }
 
   return Object.freeze({

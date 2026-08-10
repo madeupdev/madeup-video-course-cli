@@ -10,6 +10,7 @@ import type { ApplyOptions } from './commands/apply.js';
 export type CliIo = {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  confirm?: (prompt: string) => Promise<boolean>;
 };
 
 export type CliDependencies = {
@@ -105,6 +106,7 @@ Usage:
 
 Planned learner-facing commands:
   apply <recipe>
+  apply <recipe> --yes
   apply <recipe> --dry-run
   doctor
   recover <state> --directory <new-directory>`;
@@ -170,6 +172,36 @@ export async function runCli(
     return (await runApplyDryRun(args[1], applyOptions, io)).exitCode;
   }
 
+  if (
+    (args.length === 2 ||
+      (args.length === 3 && args[2] === '--yes')) &&
+    args[0] === 'apply' &&
+    args[1] !== undefined
+  ) {
+    let applyOptions = dependencies.apply;
+    if (applyOptions === undefined) {
+      try {
+        applyOptions = await loadBundledApplyOptions({
+          moduleUrl: new URL(import.meta.url),
+          startDirectory: process.cwd(),
+          nodeVersion: process.versions.node,
+          platform: process.platform,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        io.stderr(`Course manifest unavailable. ${message}`);
+        return 1;
+      }
+    }
+    const { runApply } = await import('./commands/apply.js');
+    const result = await runApply(args[1], applyOptions, io, {
+      yes: args[2] === '--yes',
+    });
+    return result.kind === 'applied' || result.kind === 'already-applied'
+      ? 0
+      : 1;
+  }
+
   const command = args[0] ?? '(none)';
   io.stderr(
     `Unknown command: ${command}\nRun madeup-video-course --help for the planned learner-facing commands.`,
@@ -178,8 +210,24 @@ export async function runCli(
 }
 
 if (import.meta.main) {
-  process.exitCode = await runCli(process.argv.slice(2), {
+  const processIo: CliIo = {
     stdout: (text) => process.stdout.write(`${text}\n`),
     stderr: (text) => process.stderr.write(`${text}\n`),
-  });
+  };
+  if (process.stdin.isTTY && process.stdout.isTTY) {
+    processIo.confirm = async (prompt) => {
+      const { createInterface } = await import('node:readline/promises');
+      const terminal = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      try {
+        const answer = await terminal.question(`${prompt} [y/N] `);
+        return /^(?:y|yes)$/iu.test(answer.trim());
+      } finally {
+        terminal.close();
+      }
+    };
+  }
+  process.exitCode = await runCli(process.argv.slice(2), processIo);
 }
