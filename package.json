@@ -16,8 +16,9 @@
     "build": "tsc -p tsconfig.build.json",
     "build:recovery-assets": "node dist/scripts/build-recovery-assets.js",
     "lint": "eslint .",
-    "pack:inspect": "pnpm pack --dry-run",
+    "pack:inspect": "node scripts/inspect-pack.ts",
     "test": "vitest run",
+    "test:inspect-pack": "vitest run tests/scripts/inspect-pack.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json"
   },

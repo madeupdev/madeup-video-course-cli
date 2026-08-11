@@ -100,10 +100,22 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm pack --dry-run
 ```
 
-Inspect the package that would be produced without publishing it:
+Create and inspect the actual package tarball without publishing it. Pass the
+exact path printed by `pnpm pack`; the inspector reads the tarball itself and
+fails if required runtime/recovery files are missing or if unsafe, private,
+sensitive, source, test, fixture, environment, or temporary-archive content is
+present:
 
 ```sh
-pnpm pack:inspect
+pnpm pack
+pnpm pack:inspect ./madeup-video-course-0.0.0-development.tgz
 ```
+
+CI runs the install, lint, typecheck, complete test suite, build, and package
+dry run on Ubuntu, macOS, and Windows with Node.js 24.18.0 and pnpm 11.17.0.
+The Ubuntu job additionally inspects the real tarball, installs that exact
+archive into a clean temporary project, and runs
+`pnpm exec madeup-video-course --help` from the installed package.

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack install --global pnpm@11.17.0
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Inspect package dry run
+        run: pnpm pack --dry-run
+
+      - name: Prepare clean temporary directories
+        if: runner.os == 'Linux'
+        id: temp
+        run: |
+          node --input-type=module --eval "import { appendFileSync, mkdtempSync } from 'node:fs'; import { EOL, tmpdir } from 'node:os'; import { join } from 'node:path'; const packDirectory = mkdtempSync(join(tmpdir(), 'madeup-video-course-pack-')); const smokeDirectory = mkdtempSync(join(tmpdir(), 'madeup-video-course-smoke-')); appendFileSync(process.env.GITHUB_OUTPUT, 'pack_directory=' + packDirectory + EOL + 'smoke_directory=' + smokeDirectory + EOL);"
+
+      - name: Create real package tarball
+        if: runner.os == 'Linux'
+        id: pack
+        env:
+          PACK_DIRECTORY: ${{ steps.temp.outputs.pack_directory }}
+        run: |
+          node --input-type=module --eval "import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'; import { EOL } from 'node:os'; import { join } from 'node:path'; const packageJson = JSON.parse(readFileSync('package.json', 'utf8')); const filename = packageJson.name.replace(/^@/, '').replace('/', '-') + '-' + packageJson.version + '.tgz'; mkdirSync(process.env.PACK_DIRECTORY, { recursive: true }); appendFileSync(process.env.GITHUB_OUTPUT, 'tarball=' + join(process.env.PACK_DIRECTORY, filename) + EOL);"
+          pnpm pack --pack-destination "$PACK_DIRECTORY"
+
+      - name: Inspect real package tarball
+        if: runner.os == 'Linux'
+        run: node scripts/inspect-pack.ts "${{ steps.pack.outputs.tarball }}"
+
+      - name: Install and smoke-test real package tarball
+        if: runner.os == 'Linux'
+        env:
+          SMOKE_DIRECTORY: ${{ steps.temp.outputs.smoke_directory }}
+          TARBALL_PATH: ${{ steps.pack.outputs.tarball }}
+        run: |
+          node --input-type=module --eval "import { mkdirSync, writeFileSync } from 'node:fs'; import { join } from 'node:path'; mkdirSync(process.env.SMOKE_DIRECTORY, { recursive: true }); writeFileSync(join(process.env.SMOKE_DIRECTORY, 'package.json'), '{\"private\":true}\n');"
+          pnpm --dir "$SMOKE_DIRECTORY" add "$TARBALL_PATH"
+          pnpm --dir "$SMOKE_DIRECTORY" exec madeup-video-course --help
