@@ -162,7 +162,9 @@ describe('exact recipe replay', () => {
     });
     expect(result.secondApply).toEqual({ kind: 'already-applied', changedFiles: [] });
     expect(result.modeComparison).toBe(
-      platform === 'win32' ? 'git-index-projection' : 'native-filesystem',
+      (platform ?? process.platform) === 'win32'
+        ? 'git-index-projection'
+        : 'native-filesystem',
     );
     expect(result.verifiedPaths).toEqual([
       'docs/replace.md',
