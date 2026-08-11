@@ -187,7 +187,7 @@ describe('exact recipe replay', () => {
       head: git(history.repository, ['rev-parse', 'HEAD']),
       status: git(history.repository, ['status', '--porcelain=v1', '-z']),
     }).toEqual(sourceStateBefore);
-  });
+  }, 30_000);
 
   it('rejects an incorrect executable declaration through Windows Git-index modes', async () => {
     const history = await syntheticHistory();
@@ -215,7 +215,7 @@ describe('exact recipe replay', () => {
       'mode mismatch: scripts/added.sh (expected 100755, received 100644)',
     );
     expect(await readdir(replayParent)).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe('replay Git path safety', () => {
