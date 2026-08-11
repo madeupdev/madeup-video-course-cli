@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "courseVersion": "0.0.0-smoke",
+  "project": {
+    "packageName": "@madeup-video/storefront",
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "localArtifacts": []
+  },
+  "release": {
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "tag": "course-v0.0.0-smoke",
+    "maxAssetBytes": 1048576
+  },
+  "recoveryStates": [
+    {
+      "id": "smoke-start",
+      "sourceCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "asset": "smoke-start.tar.gz",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [{ "path": "package.json", "mode": 420, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }]
+      },
+      "verification": ["never execute learner manifest commands"]
+    },
+    {
+      "id": "smoke-result",
+      "sourceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "asset": "smoke-result.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [{ "path": "package.json", "mode": 420, "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }]
+      },
+      "verification": ["never execute learner manifest commands"]
+    }
+  ],
+  "recipes": [
+    {
+      "id": "smoke-replay",
+      "description": "Exercise exact add, replace, and delete replay",
+      "expectedPackageName": "@madeup-video/storefront",
+      "startingState": "smoke-start",
+      "resultState": "smoke-result",
+      "operations": [
+        {
+          "type": "add",
+          "destination": "scripts/added.sh",
+          "template": "recipes/fixtures/smoke/files/README.md",
+          "afterSha256": "4cb54a0ecb145c83cfdb6e5ccfda28dccaf0a5bbebee33ac99b67acc6abea8be",
+          "mode": 493
+        },
+        {
+          "type": "replace",
+          "destination": "docs/replace.md",
+          "template": "recipes/fixtures/smoke/files/replacement.md",
+          "beforeSha256": "8f7ee0cd535af879535ad683204d8d5757a67ec88d05d1723ac23ad955d394d4",
+          "afterSha256": "2b60b679eeb423163324ab446276de1ef4fd22e5c690ec402933305501333543",
+          "mode": 420
+        },
+        {
+          "type": "delete",
+          "destination": "scripts/delete.sh",
+          "beforeSha256": "72604096c4632cbf53885e40dd8ab2d714062f131881389d070d61e856bc5142"
+        }
+      ],
+      "verification": [
+        "node -e \"require('node:fs').writeFileSync('manifest-command-ran', 'unsafe')\""
+      ]
+    }
+  ]
+}

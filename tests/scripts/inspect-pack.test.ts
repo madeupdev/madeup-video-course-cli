@@ -12,6 +12,9 @@ const temporaryDirectories: string[] = [];
 const expectedRecoveryContents = readFileSync(
   new URL('../../recovery/course-v1.0.0.json', import.meta.url),
 );
+const packageMetadata = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+) as { files?: string[]; scripts?: Record<string, string> };
 const expectedRuntimeModules = [
   'apply/plan',
   'apply/preflight',
@@ -43,6 +46,14 @@ afterEach(async () => {
     temporaryDirectories.splice(0).map((directory) =>
       rm(directory, { force: true, recursive: true }),
     ),
+  );
+});
+
+test('keeps replay fixtures out of packages and exposes the focused replay check', () => {
+  expect(packageMetadata.files).toContain('recipes');
+  expect(packageMetadata.files).toContain('!recipes/fixtures');
+  expect(packageMetadata.scripts?.['test:replay']).toBe(
+    'vitest run tests/replay/replay.test.ts',
   );
 });
 
@@ -92,6 +103,7 @@ describe.each([
   ['source file', { name: 'package/src/cli.ts', contents: 'export {};\n' }],
   ['test file', { name: 'package/tests/cli.test.js', contents: '' }],
   ['fixture', { name: 'package/fixtures/project.json', contents: '{}' }],
+  ['recipe fixture', { name: 'package/recipes/fixtures/smoke/recipe.json', contents: '{}' }],
   ['environment file', { name: 'package/dist/.env.production', contents: 'TOKEN=x' }],
   ['credential file', { name: 'package/recovery/credentials.json', contents: '{}' }],
   ['secret file', { name: 'package/dist/client-secret.txt', contents: 'x' }],

@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "recipes",
+    "!recipes/fixtures",
     "recovery"
   ],
   "scripts": {
@@ -19,6 +20,7 @@
     "pack:inspect": "node scripts/inspect-pack.ts",
     "test": "vitest run",
     "test:inspect-pack": "vitest run tests/scripts/inspect-pack.test.ts",
+    "test:replay": "vitest run tests/replay/replay.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json"
   },

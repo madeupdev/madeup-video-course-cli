@@ -48,6 +48,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Replay recipes exactly
+        run: pnpm test:replay
+
       - name: Build
         run: pnpm build
 
