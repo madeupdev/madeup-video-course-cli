@@ -4,6 +4,7 @@
   "description": "Prepared-code and recovery tooling for the Made Up Video advanced monorepos course",
   "type": "module",
   "private": false,
+  "license": "SEE LICENSE IN LICENSE.md",
   "bin": {
     "madeup-video-course": "./dist/cli.js"
   },

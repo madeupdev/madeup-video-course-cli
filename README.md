@@ -119,3 +119,10 @@ dry run on Ubuntu, macOS, and Windows with Node.js 24.18.0 and pnpm 11.17.0.
 The Ubuntu job additionally inspects the real tarball, installs that exact
 archive into a clean temporary project, and runs
 `pnpm exec madeup-video-course --help` from the installed package.
+
+## License
+
+This software is available for noncommercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+Required Notice: Copyright 2026 Robert Donnelly.

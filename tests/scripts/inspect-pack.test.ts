@@ -14,7 +14,10 @@ const expectedRecoveryContents = readFileSync(
 );
 const packageMetadata = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
-) as { files?: string[]; scripts?: Record<string, string> };
+) as { files?: string[]; license?: string; scripts?: Record<string, string> };
+const expectedLicenseContents = readFileSync(
+  new URL('../../LICENSE.md', import.meta.url),
+);
 const expectedRuntimeModules = [
   'apply/plan',
   'apply/preflight',
@@ -57,6 +60,15 @@ test('keeps replay fixtures out of packages and exposes the focused replay check
   );
 });
 
+test('declares and packages the noncommercial software license', async () => {
+  expect(packageMetadata.license).toBe('SEE LICENSE IN LICENSE.md');
+
+  const tarballPath = await writeTarball(validEntries());
+  const result = await inspectPackageTarball(tarballPath);
+
+  expect(result.files).toContain('package/LICENSE.md');
+});
+
 function validEntries(): TarFixtureEntry[] {
   return [
     {
@@ -69,6 +81,7 @@ function validEntries(): TarFixtureEntry[] {
       }),
     },
     { name: 'package/README.md', contents: '# Course CLI\n' },
+    { name: 'package/LICENSE.md', contents: expectedLicenseContents },
     ...expectedRuntimeModules.map((moduleName) => ({
       name: `package/dist/${moduleName}.js`,
       contents: moduleName === 'cli' ? '#!/usr/bin/env node\n' : 'export {};\n',

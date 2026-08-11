@@ -23,6 +23,7 @@ type PackedEntry = Readonly<{
 const requiredPackageFiles = [
   'package/package.json',
   'package/README.md',
+  'package/LICENSE.md',
   'package/recovery/course-v1.0.0.json',
 ] as const;
 
