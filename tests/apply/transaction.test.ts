@@ -243,7 +243,9 @@ describe('apply transaction', () => {
         );
       },
     },
-  ])('rolls back when final verification detects a wrong $label', async ({ corrupt }) => {
+  ].filter(({ label }) => label !== 'mode' || process.platform !== 'win32'))(
+    'rolls back when final verification detects a wrong $label',
+    async ({ corrupt }) => {
     const fixture = await createFixture();
     const beforeTree = await snapshotWorkingTree(fixture.projectRoot);
     const beforeStatus = git(fixture.projectRoot, ['status', '--porcelain=v1', '-z']);
@@ -261,7 +263,8 @@ describe('apply transaction', () => {
     expect(await snapshotWorkingTree(fixture.projectRoot)).toEqual(beforeTree);
     expect(git(fixture.projectRoot, ['status', '--porcelain=v1', '-z'])).toBe(beforeStatus);
     expect(await transactionArtifacts(fixture.projectRoot)).toEqual([]);
-  });
+    },
+  );
 
   it('preserves the original error and attaches rollback failures', async () => {
     const fixture = await createFixture();
