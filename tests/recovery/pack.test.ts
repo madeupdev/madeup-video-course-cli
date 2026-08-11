@@ -322,8 +322,10 @@ describe('deterministic recovery archive packing', () => {
 
     const destination = join(fixture.root, 'mode-check');
     await extractRecoveryArchive(archive, destination);
-    expect((await stat(join(destination, 'scripts/run.sh'))).mode & 0o777).toBe(0o755);
-    expect((await stat(join(destination, 'src/index.ts'))).mode & 0o777).toBe(0o644);
+    if (process.platform !== 'win32') {
+      expect((await stat(join(destination, 'scripts/run.sh'))).mode & 0o777).toBe(0o755);
+      expect((await stat(join(destination, 'src/index.ts'))).mode & 0o777).toBe(0o644);
+    }
   });
 
   it('writes computed metadata only after every archive succeeds', async () => {
@@ -338,7 +340,7 @@ describe('deterministic recovery archive packing', () => {
     });
     expect(result.assets[0]?.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(result.assets[0]?.size).toBeGreaterThan(0);
-    expect(await readdir(fixture.output)).toEqual([
+    expect((await readdir(fixture.output)).sort()).toEqual([
       'SHA256SUMS',
       'fixture-start.tar.gz',
       'manifest.json',
@@ -356,7 +358,7 @@ describe('deterministic recovery archive packing', () => {
     const result = await buildRecoveryAssets(options(fixture));
 
     expect(result.warnings).toEqual([]);
-    expect(await readdir(fixture.output)).toEqual([
+    expect((await readdir(fixture.output)).sort()).toEqual([
       'SHA256SUMS',
       'fixture-start.tar.gz',
       'manifest.json',
@@ -405,7 +407,7 @@ describe('deterministic recovery archive packing', () => {
     );
     injectedFilesystemFailure.backupCleanup = false;
 
-    expect(await readdir(fixture.output)).toEqual([
+    expect((await readdir(fixture.output)).sort()).toEqual([
       'SHA256SUMS',
       'fixture-start.tar.gz',
       'manifest.json',

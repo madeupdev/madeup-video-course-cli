@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -46,7 +47,7 @@ describe('loadManifest', () => {
   });
 
   it('loads a validated manifest from an explicit file path', async () => {
-    const result = await loadManifest(validFixtureUrl.pathname);
+    const result = await loadManifest(fileURLToPath(validFixtureUrl));
 
     expect(result.ok).toBe(true);
   });

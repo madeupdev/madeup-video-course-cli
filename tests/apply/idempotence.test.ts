@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createApplyPlan } from '../../src/apply/plan.js';
-import { applyTransaction } from '../../src/apply/transaction.js';
+import {
+  applyTransaction,
+  classifyApplyPlan,
+} from '../../src/apply/transaction.js';
 import { hashBytes } from '../../src/project/hash.js';
 
 const temporaryDirectories: string[] = [];
@@ -99,5 +102,19 @@ describe('apply transaction idempotence', () => {
     });
 
     expect(await snapshot(fixture.projectRoot)).toEqual(beforeAttempt);
+  });
+
+  it('ignores unenforceable executable-mode differences on Windows', async () => {
+    const fixture = await createPlan();
+    for (const operation of fixture.plan.operations) {
+      if (operation.type === 'delete') continue;
+      await writeFile(
+        operation.destinationPath,
+        Buffer.from(operation.templateBytesBase64, 'base64'),
+        { mode: 0o644 },
+      );
+    }
+
+    await expect(classifyApplyPlan(fixture.plan, 'win32')).resolves.toBe('after');
   });
 });

@@ -334,9 +334,13 @@ export async function inspectPackageTarball(tarballPath: string): Promise<Packag
   }
 
   const recoveryEntry = files.get('package/recovery/course-v1.0.0.json');
+  const normalizedRecoveryContents = recoveryEntry?.contents
+    .toString('utf8')
+    .replaceAll('\r\n', '\n');
   if (
     recoveryEntry === undefined ||
-    createHash('sha256').update(recoveryEntry.contents).digest('hex') !== expectedRecoverySha256
+    normalizedRecoveryContents === undefined ||
+    createHash('sha256').update(normalizedRecoveryContents).digest('hex') !== expectedRecoverySha256
   ) {
     throw new Error('Expected public recovery data does not match course-v1.0.0.json');
   }

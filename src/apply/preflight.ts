@@ -26,6 +26,7 @@ export type ApplyPreflightOptions = {
   workingBoundary: string;
   sourceRoot: string;
   manifest: CourseManifest;
+  platform?: NodeJS.Platform;
 };
 
 export type ApplyPreflightBehavior = Readonly<{
@@ -183,6 +184,7 @@ async function planOperation(
   sourceRoot: string,
   operation: Recipe['operations'][number],
   acceptAfterState: boolean,
+  platform: NodeJS.Platform,
 ): Promise<
   | Readonly<{
       ok: true;
@@ -225,7 +227,7 @@ async function planOperation(
         !acceptAfterState ||
         !inspected.ok ||
         inspected.file.sha256 !== operation.afterSha256 ||
-        inspected.file.mode !== operation.mode
+        (platform !== 'win32' && inspected.file.mode !== operation.mode)
       ) {
         return refusal(
           'add-destination-exists',
@@ -278,7 +280,7 @@ async function planOperation(
   const state = acceptAfterState &&
       operation.type === 'replace' &&
       inspected.file.sha256 === operation.afterSha256 &&
-      inspected.file.mode === operation.mode
+      (platform === 'win32' || inspected.file.mode === operation.mode)
     ? 'after'
     : inspected.file.sha256 === operation.beforeSha256
       ? 'before'
@@ -371,6 +373,7 @@ export async function preflightApply(
       options.sourceRoot,
       operation,
       behavior.acceptAfterState === true,
+      options.platform ?? process.platform,
     );
     if (!planned.ok) {
       if (!git.clean) {

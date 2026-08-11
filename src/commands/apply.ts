@@ -96,7 +96,8 @@ export async function runApply(
   io: ApplyIo,
   execution: ApplyExecutionOptions = {},
 ): Promise<ApplyCommandResult> {
-  const preflight = await preflightApply(recipeId, options, {
+  const platform = execution.transaction?.platform ?? options.platform ?? process.platform;
+  const preflight = await preflightApply(recipeId, { ...options, platform }, {
     acceptAfterState: true,
   });
   if (!preflight.ok) {
@@ -108,8 +109,8 @@ export async function runApply(
     });
   }
 
-  if ((await classifyApplyPlan(preflight.plan)) === 'after') {
-    return applyTransaction(preflight.plan);
+  if ((await classifyApplyPlan(preflight.plan, platform)) === 'after') {
+    return applyTransaction(preflight.plan, { platform });
   }
 
   printPreview(preflight.plan, io);
@@ -129,7 +130,7 @@ export async function runApply(
   try {
     const result = await applyTransaction(
       preflight.plan,
-      execution.transaction,
+      { ...execution.transaction, platform },
     );
     if (result.kind === 'applied') {
       const recipe = options.manifest.recipes.find(

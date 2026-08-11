@@ -28,6 +28,7 @@ export type TransactionFailurePoint =
   | Readonly<{ kind: 'final-verification' }>;
 
 export type ApplyTransactionOptions = Readonly<{
+  platform?: NodeJS.Platform;
   injectFailure?: (point: TransactionFailurePoint) => void | Promise<void>;
   onRollback?: (operation: PlannedOperation) => void;
 }>;
@@ -86,7 +87,14 @@ async function fileFingerprint(path: string): Promise<{ hash: string; mode: numb
   return { hash: hashBytes(bytes), mode: fileStat.mode & 0o777 };
 }
 
-async function operationState(operation: PlannedOperation): Promise<OperationState> {
+function modeMatches(actual: number, expected: number, platform: NodeJS.Platform): boolean {
+  return platform === 'win32' || actual === expected;
+}
+
+async function operationState(
+  operation: PlannedOperation,
+  platform: NodeJS.Platform,
+): Promise<OperationState> {
   const kind = await pathState(operation.destinationPath);
   if (operation.type === 'add') {
     if (kind === 'missing') {
@@ -96,7 +104,8 @@ async function operationState(operation: PlannedOperation): Promise<OperationSta
       return 'invalid';
     }
     const fingerprint = await fileFingerprint(operation.destinationPath);
-    return fingerprint.hash === operation.afterSha256 && fingerprint.mode === operation.mode
+    return fingerprint.hash === operation.afterSha256 &&
+      modeMatches(fingerprint.mode, operation.mode, platform)
       ? 'after'
       : 'invalid';
   }
@@ -119,7 +128,7 @@ async function operationState(operation: PlannedOperation): Promise<OperationSta
   const fingerprint = await fileFingerprint(operation.destinationPath);
   if (
     fingerprint.hash === operation.afterSha256 &&
-    fingerprint.mode === operation.mode
+    modeMatches(fingerprint.mode, operation.mode, platform)
   ) {
     return 'after';
   }
@@ -128,8 +137,11 @@ async function operationState(operation: PlannedOperation): Promise<OperationSta
 
 export async function classifyApplyPlan(
   plan: ApplyPlan,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<'before' | 'after'> {
-  const states = await Promise.all(plan.operations.map(operationState));
+  const states = await Promise.all(
+    plan.operations.map((operation) => operationState(operation, platform)),
+  );
   const invalidPosition = states.indexOf('invalid');
   if (invalidPosition !== -1) {
     throw new ApplyStateError(plan.operations[invalidPosition]!.destination);
@@ -145,6 +157,7 @@ export async function classifyApplyPlan(
 async function createBackups(
   plan: ApplyPlan,
   transactionDirectory: string,
+  platform: NodeJS.Platform,
 ): Promise<Map<string, OperationBackup>> {
   const backups = new Map<string, OperationBackup>();
   for (const [position, operation] of plan.operations.entries()) {
@@ -166,7 +179,7 @@ async function createBackups(
     const backupFingerprint = await fileFingerprint(backupPath);
     if (
       backupFingerprint.hash !== fingerprint.hash ||
-      backupFingerprint.mode !== fingerprint.mode
+      !modeMatches(backupFingerprint.mode, fingerprint.mode, platform)
     ) {
       throw new Error(`Backup verification failed for ${operation.destination}`);
     }
@@ -211,9 +224,12 @@ async function writeOperation(
   await replaceWithTemporaryFile(operation, transactionDirectory, position);
 }
 
-async function verifyAfterState(plan: ApplyPlan): Promise<void> {
+async function verifyAfterState(
+  plan: ApplyPlan,
+  platform: NodeJS.Platform,
+): Promise<void> {
   for (const operation of plan.operations) {
-    if ((await operationState(operation)) !== 'after') {
+    if ((await operationState(operation, platform)) !== 'after') {
       throw new Error(`Final verification failed for ${operation.destination}`);
     }
   }
@@ -227,7 +243,8 @@ export async function applyTransaction(
   plan: ApplyPlan,
   options: ApplyTransactionOptions = {},
 ): Promise<ApplyTransactionResult> {
-  const state = await classifyApplyPlan(plan);
+  const platform = options.platform ?? process.platform;
+  const state = await classifyApplyPlan(plan, platform);
   if (state === 'after') {
     return Object.freeze({
       kind: 'already-applied',
@@ -252,14 +269,14 @@ export async function applyTransaction(
   let backups = new Map<string, OperationBackup>();
 
   try {
-    backups = await createBackups(plan, transactionDirectory);
+    backups = await createBackups(plan, transactionDirectory, platform);
     for (const [position, operation] of plan.operations.entries()) {
       completedOperations.push(operation);
       await writeOperation(operation, transactionDirectory, position);
       await options.injectFailure?.({ kind: 'after-write', position });
     }
     await options.injectFailure?.({ kind: 'final-verification' });
-    await verifyAfterState(plan);
+    await verifyAfterState(plan, platform);
     await rm(transactionDirectory, { force: true, recursive: true });
     return Object.freeze({
       kind: 'applied',
@@ -271,7 +288,7 @@ export async function applyTransaction(
         completedOperations,
         backups,
         transactionDirectory,
-        { onRollback: options.onRollback },
+        { onRollback: options.onRollback, platform },
       )),
     ];
     if (rollbackErrors.length === 0) {

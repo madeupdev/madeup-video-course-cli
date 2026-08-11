@@ -169,12 +169,16 @@ describe('apply transaction', () => {
     });
     expect(await readFile(join(fixture.projectRoot, fixture.destinations.add), 'utf8'))
       .toBe(fixture.contents.addAfter);
-    expect((await stat(join(fixture.projectRoot, fixture.destinations.add))).mode & 0o777)
-      .toBe(0o644);
+    if (process.platform !== 'win32') {
+      expect((await stat(join(fixture.projectRoot, fixture.destinations.add))).mode & 0o777)
+        .toBe(0o644);
+    }
     expect(await readFile(join(fixture.projectRoot, fixture.destinations.replace), 'utf8'))
       .toBe(fixture.contents.replaceAfter);
-    expect((await stat(join(fixture.projectRoot, fixture.destinations.replace))).mode & 0o777)
-      .toBe(0o755);
+    if (process.platform !== 'win32') {
+      expect((await stat(join(fixture.projectRoot, fixture.destinations.replace))).mode & 0o777)
+        .toBe(0o755);
+    }
     await expect(lstat(join(fixture.projectRoot, fixture.destinations.delete))).rejects
       .toMatchObject({ code: 'ENOENT' });
     expect(await transactionArtifacts(fixture.projectRoot)).toEqual([]);

@@ -220,6 +220,34 @@ describe('apply command', () => {
       .toBe(fixture.after);
   });
 
+  it('uses Windows mode semantics consistently from preflight through execution', async () => {
+    const fixture = await createFixture();
+    const recipe = fixture.options.manifest.recipes[0]!;
+    recipe.operations = [
+      {
+        type: 'add',
+        destination: 'src/already-added.ts',
+        template: 'recipes/app.ts',
+        afterSha256: hashBytes(Buffer.from(fixture.after)),
+        mode: 0o755,
+      },
+    ];
+    await writeFile(
+      join(fixture.projectRoot, 'src/already-added.ts'),
+      fixture.after,
+      { mode: 0o644 },
+    );
+
+    const result = await runApply(
+      'prepared-app',
+      fixture.options,
+      { stdout: () => undefined, stderr: () => undefined },
+      { yes: true, transaction: { platform: 'win32' } },
+    );
+
+    expect(result).toEqual({ kind: 'already-applied', changedFiles: [] });
+  });
+
   it('returns the exact idempotent result on a second command application', async () => {
     const fixture = await createFixture();
     const io = { stdout: () => undefined, stderr: () => undefined };
@@ -259,7 +287,9 @@ describe('apply command', () => {
     expect(stderr.join('\n')).not.toContain('was rolled back');
   });
 
-  it('recognises a mode-only replacement as already applied on the second run', async () => {
+  it.skipIf(process.platform === 'win32')(
+    'recognises a mode-only replacement as already applied on the second run',
+    async () => {
     const fixture = await createFixture();
     const operation = fixture.options.manifest.recipes[0]!.operations[0]!;
     if (operation.type !== 'replace') {
@@ -308,5 +338,6 @@ describe('apply command', () => {
       .toBe(beforeSecondRun.mode);
     expect(git(fixture.projectRoot, ['status', '--porcelain=v1', '-z']))
       .toBe(beforeSecondRun.gitStatus);
-  });
+    },
+  );
 });

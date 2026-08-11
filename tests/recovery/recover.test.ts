@@ -118,7 +118,6 @@ describe('recover command', () => {
     ['unexpected file', [...validEntries, { name: 'unexpected.txt', contents: 'nope' }], () => undefined, /unexpected/i],
     ['unexpected empty directory', [...validEntries, { name: 'empty/', type: '5' }], () => undefined, /unexpected/i],
     ['modified bytes', [{ ...validEntries[0]!, contents: 'wrong' }, ...validEntries.slice(1)], () => undefined, /modified/i],
-    ['wrong mode', validEntries, (manifest: CourseManifest) => { manifest.recoveryStates[0]!.tree.files[1]!.mode = 0o644; }, /mode/i],
     ['digest mismatch', validEntries, (manifest: CourseManifest) => { manifest.recoveryStates[0]!.sha256 = '0'.repeat(64); }, /digest mismatch/i],
     ['missing asset', validEntries, (manifest: CourseManifest) => { manifest.recoveryStates[0]!.asset = 'missing.tar.gz'; }, /404/i],
     ['declared maximum exceeded', validEntries, (manifest: CourseManifest) => { manifest.release.maxAssetBytes = 1; }, /maximum asset size/i],
@@ -126,6 +125,17 @@ describe('recover command', () => {
   ] as const)('removes every temporary and partial output after %s', async (_label, entries, mutate, message) => {
     expect(await expectCleanFailure(entries, mutate)).toMatch(message);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'removes every temporary and partial output after wrong mode',
+    async () => {
+      expect(
+        await expectCleanFailure(validEntries, (manifest) => {
+          manifest.recoveryStates[0]!.tree.files[1]!.mode = 0o644;
+        }),
+      ).toMatch(/mode/i);
+    },
+  );
 
   it('rejects a destination that already exists, including an empty directory', async () => {
     const fixture = await recoveryFixture();
@@ -170,7 +180,9 @@ describe('recover command', () => {
     expect(stderr).toEqual([]);
     expect(result.exitCode).toBe(0);
     expect(await readFile(join(fixture.destination, 'package.json'), 'utf8')).toBe('{"name":"@madeup-video/storefront"}\n');
-    expect((await lstat(join(fixture.destination, 'scripts/verify.sh'))).mode & 0o777).toBe(0o755);
+    if (process.platform !== 'win32') {
+      expect((await lstat(join(fixture.destination, 'scripts/verify.sh'))).mode & 0o777).toBe(0o755);
+    }
     expect(await readdir(fixture.root)).toEqual(['recovered']);
     const output = stdout.join('\n');
     expect(output).toContain('Course version: 1.0.0');
@@ -202,7 +214,7 @@ describe('recover command', () => {
     }, { stdout: (line) => stdout.push(line), stderr: () => undefined });
 
     expect(result.exitCode).toBe(0);
-    expect(stdout.filter((line) => line.includes(destination))).toEqual([
+    expect(stdout.filter((line) => line.startsWith('Destination: '))).toEqual([
       `Destination: ${JSON.stringify(destination)}`,
     ]);
     const commandHeading = stdout.indexOf(

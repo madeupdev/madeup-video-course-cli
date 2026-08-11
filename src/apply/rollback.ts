@@ -20,6 +20,7 @@ export type OperationBackup = Readonly<{
 
 export type RollbackOptions = Readonly<{
   onRollback?: (operation: PlannedOperation) => void;
+  platform?: NodeJS.Platform;
 }>;
 
 async function pathExists(path: string): Promise<boolean> {
@@ -43,6 +44,7 @@ async function restoreBackup(
   backup: OperationBackup,
   transactionDirectory: string,
   position: number,
+  platform: NodeJS.Platform,
 ): Promise<void> {
   if (
     backup.path === undefined ||
@@ -65,7 +67,7 @@ async function restoreBackup(
   ]);
   if (
     hashBytes(restoredBytes) !== backup.sha256 ||
-    (restoredStat.mode & 0o777) !== backup.mode
+    (platform !== 'win32' && (restoredStat.mode & 0o777) !== backup.mode)
   ) {
     throw new Error(`Rollback verification failed for ${backup.operation.destination}`);
   }
@@ -93,7 +95,12 @@ export async function rollbackOperations(
         if (backup === undefined) {
           throw new Error(`Missing rollback record for ${operation.destination}`);
         }
-        await restoreBackup(backup, transactionDirectory, position);
+        await restoreBackup(
+          backup,
+          transactionDirectory,
+          position,
+          options.platform ?? process.platform,
+        );
       }
     } catch (error) {
       failures.push(error instanceof Error ? error : new Error(String(error)));
