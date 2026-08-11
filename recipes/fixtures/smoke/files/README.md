@@ -1,3 +1,3 @@
 # Exact replay smoke fixture
 
-This file is intentionally shared by the synthetic add and replace operations.
+This file is the template for the synthetic add operation.

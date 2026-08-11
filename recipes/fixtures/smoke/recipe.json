@@ -47,7 +47,7 @@
           "type": "add",
           "destination": "scripts/added.sh",
           "template": "recipes/fixtures/smoke/files/README.md",
-          "afterSha256": "4cb54a0ecb145c83cfdb6e5ccfda28dccaf0a5bbebee33ac99b67acc6abea8be",
+          "afterSha256": "c99d90e75112821dbf0fad7537b57ce5d483fe1131849bacae5814e1b03277b3",
           "mode": 493
         },
         {
