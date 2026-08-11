@@ -217,6 +217,11 @@ describe('exact recipe replay', () => {
 });
 
 describe('replay Git path safety', () => {
+  it('preserves smoke template bytes across Git checkouts', async () => {
+    expect(await readFile(join(repositoryRoot, '.gitattributes'), 'utf8'))
+      .toContain('recipes/fixtures/smoke/files/*.md -text');
+  });
+
   it.each([
     '../outside',
     'C:/alternate-stream',
