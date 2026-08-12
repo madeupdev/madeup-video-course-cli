@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 
 const publishWorkflowUrl = new URL('../../.github/workflows/publish.yml', import.meta.url);
 const releaseWorkflowUrl = new URL('../../.github/workflows/release.yml', import.meta.url);
-const readmeUrl = new URL('../../README.md', import.meta.url);
+const releaseRunbookUrl = new URL('../../docs/RELEASING.md', import.meta.url);
 
 function normalizeNewlines(text: string): string {
   return text.replaceAll('\r\n', '\n');
@@ -145,20 +145,19 @@ test('keeps a draft until npm integrity and provenance are verified', async () =
   expect(workflow).not.toMatch(/NPM_TOKEN|secrets\./u);
 });
 
-test('documents the unavoidable tokenless bootstrap and provenance limitation', async () => {
-  const readme = await readNormalizedText(readmeUrl);
+test('records the completed one-time bootstrap exception', async () => {
+  const runbook = await readNormalizedText(releaseRunbookUrl);
 
-  expect(readme).toContain('`npm stage publish`\ncannot create a new package');
-  expect(readme).toContain('`npm trust` requires an existing package');
-  expect(readme).toContain('interactive account 2FA');
-  expect(readme).toContain('--provenance=false');
-  expect(readme).toMatch(/the bootstrap version cannot have npm provenance/iu);
-  expect(readme).toMatch(/public GitHub repository and a public\s+npm package/iu);
-  expect(readme).toContain('No npm token');
+  expect(runbook).toContain('Version `0.0.1` was therefore published manually');
+  expect(runbook).toContain('interactive\naccount authentication');
+  expect(runbook).toContain('provenance explicitly disabled');
+  expect(runbook).toContain('That exception is complete and must not be repeated');
+  expect(runbook).toContain('All subsequent releases use the stage-only\ntrusted publisher');
+  expect(runbook).toContain('Do not create or use an npm publication token');
 });
 
 test('documents the exact stage-only trusted publisher and approval flow', async () => {
-  const readme = await readNormalizedText(readmeUrl);
+  const runbook = await readNormalizedText(releaseRunbookUrl);
 
   for (const value of [
     'madeupdev',
@@ -167,30 +166,26 @@ test('documents the exact stage-only trusted publisher and approval flow', async
     'npm` environment',
     'npm stage publish',
     'stage-only',
-    'npm stage approve',
-    'rerun the failed `Release` workflow',
   ]) {
-    expect(readme).toContain(value);
+    expect(runbook).toContain(value);
   }
-  expect(readme).toContain('Actions → Publish → Run workflow');
-  expect(readme).toContain('DRY RUN');
-  expect(readme).toMatch(/direct OIDC publication/iu);
+  expect(runbook).toContain('Actions → Publish → Run workflow');
+  expect(runbook).toContain('`DRY RUN` notice');
+  expect(runbook).toContain('approve the stage with npm account 2FA');
+  expect(runbook).toMatch(/rerun the\s+failed Release workflow/iu);
 });
 
-test('documents every external checkpoint and the pending purge blocker', async () => {
-  const readme = await readNormalizedText(readmeUrl);
+test('documents every remaining external release checkpoint', async () => {
+  const runbook = await readNormalizedText(releaseRunbookUrl);
 
   for (const checkpoint of [
-    'Confirm the private-email history purge',
-    'Make the repository public',
-    'Perform the first npm publication',
-    'Create the protected GitHub environment',
-    'Configure the npm trusted publisher',
-    'Disable token publication',
+    'Obtain explicit approval to create the matching exact tag',
+    'review the waiting `npm` environment deployment',
+    'Review the staged package on npmjs.com',
+    'Obtain explicit approval, then approve the stage',
+    'Require two-factor authentication',
     'Enable immutable GitHub Releases',
-    'Create and push the first automated release tag',
-    'Approve the staged npm package',
   ]) {
-    expect(readme).toContain(checkpoint);
+    expect(runbook).toContain(checkpoint);
   }
 });
