@@ -111,7 +111,7 @@ present:
 
 ```sh
 pnpm pack
-pnpm pack:inspect ./madeup-video-course-0.0.1.tgz
+pnpm pack:inspect ./madeup-video-course-0.1.0.tgz
 ```
 
 CI runs the install, lint, typecheck, complete test suite, build, and package
