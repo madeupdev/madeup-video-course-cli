@@ -73,6 +73,20 @@ run summary contains the explicit `DRY RUN` notice.
 The published GitHub Release must contain the exact `.tgz` and `SHA256SUMS` from
 the Publish workflow. It must not independently rebuild the package.
 
+## Recovery after a Release workflow repair
+
+A rerun uses the workflow definition from the original run. If a Release run
+failed because that definition itself was defective, merge the reviewed repair
+first. Then open **Actions → Release → Run workflow**.
+Enter the successful Publish workflow run ID. Do not supply a tag, commit, or
+artifact manually.
+
+The recovery job queries that exact run and rejects it unless it is this
+repository's completed, successful `Publish` tag-push workflow. It also verifies
+that the current tag still targets the recorded commit before reusing the exact
+artifact through the normal checksum, npm integrity, provenance, and draft
+release gates.
+
 ## One-time bootstrap record
 
 The package had to exist before npm could configure trusted publishing or stage
