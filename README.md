@@ -68,7 +68,7 @@ doctor
 recover <state> --directory <new-directory>
 ```
 
-The `0.0.0-development` package must not be published.
+Versions containing the `development` prerelease label must not be published.
 
 ## Toolchain
 
@@ -111,7 +111,7 @@ present:
 
 ```sh
 pnpm pack
-pnpm pack:inspect ./madeup-video-course-0.0.0-development.tgz
+pnpm pack:inspect ./madeup-video-course-0.0.1.tgz
 ```
 
 CI runs the install, lint, typecheck, complete test suite, build, and package
@@ -157,11 +157,15 @@ No npm token is needed or permitted. Because npm provenance must originate in a
 supported cloud CI environment and link a public GitHub repository and a public
 npm package, the bootstrap version cannot have npm provenance.
 
-Only after the history purge and every checkpoint below is approved, prepare a
-real, non-development package version and run the full local gates. The manual
-bootstrap publication command must target the exact archive already inspected
-and checksummed; `--provenance=false` explicitly overrides this repository's
-normal trusted-publication setting for this one unavoidable local publication:
+The one-time bootstrap version is `0.0.1`. It is published under the
+`bootstrap` dist-tag so this unavoidable non-provenance package does not become
+the default `latest` install. The first automated OIDC release will be `0.1.0`.
+
+Only after every checkpoint below is approved, run the full local gates. The
+manual bootstrap publication command must target the exact archive already
+inspected and checksummed; `--provenance=false` explicitly overrides this
+repository's normal trusted-publication setting for this one unavoidable local
+publication:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -173,15 +177,15 @@ pnpm build
 pnpm audit --prod
 mkdir release-bundle
 pnpm pack --pack-destination release-bundle
-node scripts/release.ts prepare vMAJOR.MINOR.PATCH release-bundle
-node scripts/release.ts verify-bundle vMAJOR.MINOR.PATCH release-bundle
-npm publish release-bundle/madeup-video-course-MAJOR.MINOR.PATCH.tgz --access public --provenance=false
+node scripts/release.ts prepare v0.0.1 release-bundle
+node scripts/release.ts verify-bundle v0.0.1 release-bundle
+npm publish release-bundle/madeup-video-course-0.0.1.tgz --access public --tag bootstrap --provenance=false
 ```
 
 The final command is an external mutation and must not be run without explicit
-approval at that checkpoint. The first automated OIDC release must use a later,
-previously unpublished version; the bootstrap version cannot be replayed
-through the tag workflow.
+approval at that checkpoint. The first automated OIDC release must use `0.1.0`
+or another later, previously unpublished version; the bootstrap version cannot
+be replayed through the tag workflow.
 
 ### Trusted-publisher configuration
 

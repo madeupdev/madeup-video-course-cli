@@ -1,6 +1,6 @@
 {
   "name": "@madeup-video/course",
-  "version": "0.0.0-development",
+  "version": "0.0.1",
   "description": "Prepared-code and recovery tooling for the Made Up Video advanced monorepos course",
   "type": "module",
   "private": false,
