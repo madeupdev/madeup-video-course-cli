@@ -6,8 +6,20 @@ const publishWorkflowUrl = new URL('../../.github/workflows/publish.yml', import
 const releaseWorkflowUrl = new URL('../../.github/workflows/release.yml', import.meta.url);
 const readmeUrl = new URL('../../README.md', import.meta.url);
 
+function normalizeNewlines(text: string): string {
+  return text.replaceAll('\r\n', '\n');
+}
+
+async function readNormalizedText(url: URL): Promise<string> {
+  return normalizeNewlines(await readFile(url, 'utf8'));
+}
+
+test('normalizes Windows checkout line endings before static assertions', () => {
+  expect(normalizeNewlines('first\r\nsecond\r\n')).toBe('first\nsecond\n');
+});
+
 test('uses safe triggers, least privilege, concurrency, and immutable actions', async () => {
-  const workflow = await readFile(publishWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(publishWorkflowUrl);
 
   expect(workflow).toMatch(/^name: Publish$/mu);
   expect(workflow).toMatch(/^[ ]{2}workflow_dispatch:$/mu);
@@ -22,7 +34,7 @@ test('uses safe triggers, least privilege, concurrency, and immutable actions', 
 });
 
 test('pins the release toolchain and runs every build gate without caching', async () => {
-  const workflow = await readFile(publishWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(publishWorkflowUrl);
 
   expect(workflow).toContain('node-version: 24.18.0');
   expect(workflow).toContain('package-manager-cache: false');
@@ -50,7 +62,7 @@ test('pins the release toolchain and runs every build gate without caching', asy
 });
 
 test('makes manual dispatch an unmistakable non-publishing dry run', async () => {
-  const workflow = await readFile(publishWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(publishWorkflowUrl);
 
   expect(workflow).toContain("github.event_name == 'workflow_dispatch'");
   expect(workflow).toContain('DRY RUN: npm publication and GitHub Release creation were skipped');
@@ -61,7 +73,7 @@ test('makes manual dispatch an unmistakable non-publishing dry run', async () =>
 });
 
 test('stages only the exact verified tag artifact through OIDC and the npm environment', async () => {
-  const workflow = await readFile(publishWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(publishWorkflowUrl);
 
   expect(workflow).toContain('environment: npm');
   expect(workflow).toMatch(/permissions:\n[ ]{6}contents: read\n[ ]{6}id-token: write/u);
@@ -74,7 +86,7 @@ test('stages only the exact verified tag artifact through OIDC and the npm envir
 });
 
 test('releases only a successful trusted Publish tag run with narrow write permission', async () => {
-  const workflow = await readFile(releaseWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(releaseWorkflowUrl);
 
   expect(workflow).toMatch(/^name: Release$/mu);
   expect(workflow).toContain('workflow_run:');
@@ -89,7 +101,7 @@ test('releases only a successful trusted Publish tag run with narrow write permi
 });
 
 test('downloads and verifies the exact upstream artifact without rebuilding', async () => {
-  const workflow = await readFile(releaseWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(releaseWorkflowUrl);
 
   expect(workflow).toMatch(/uses: actions\/download-artifact@[a-f0-9]{40}/u);
   expect(workflow).toContain('run-id: ${{ github.event.workflow_run.id }}');
@@ -102,7 +114,7 @@ test('downloads and verifies the exact upstream artifact without rebuilding', as
 });
 
 test('keeps a draft until npm integrity and provenance are verified', async () => {
-  const workflow = await readFile(releaseWorkflowUrl, 'utf8');
+  const workflow = await readNormalizedText(releaseWorkflowUrl);
 
   expect(workflow).toContain('gh release create "$TAG"');
   expect(workflow).toContain('gh release upload "$TAG"');
@@ -119,7 +131,7 @@ test('keeps a draft until npm integrity and provenance are verified', async () =
 });
 
 test('documents the unavoidable tokenless bootstrap and provenance limitation', async () => {
-  const readme = await readFile(readmeUrl, 'utf8');
+  const readme = await readNormalizedText(readmeUrl);
 
   expect(readme).toContain('`npm stage publish`\ncannot create a new package');
   expect(readme).toContain('`npm trust` requires an existing package');
@@ -131,7 +143,7 @@ test('documents the unavoidable tokenless bootstrap and provenance limitation', 
 });
 
 test('documents the exact stage-only trusted publisher and approval flow', async () => {
-  const readme = await readFile(readmeUrl, 'utf8');
+  const readme = await readNormalizedText(readmeUrl);
 
   for (const value of [
     'madeupdev',
@@ -151,7 +163,7 @@ test('documents the exact stage-only trusted publisher and approval flow', async
 });
 
 test('documents every external checkpoint and the pending purge blocker', async () => {
-  const readme = await readFile(readmeUrl, 'utf8');
+  const readme = await readNormalizedText(readmeUrl);
 
   for (const checkpoint of [
     'Confirm the private-email history purge',
