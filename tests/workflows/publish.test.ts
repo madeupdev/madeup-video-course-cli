@@ -33,6 +33,21 @@ test('uses safe triggers, least privilege, concurrency, and immutable actions', 
   expect(workflow).not.toMatch(/uses: [^\n]+@(?![a-f0-9]{40}(?:\s|$))[^\s#]+/u);
 });
 
+test('pins artifact transfer to current Node 24 action releases', async () => {
+  const publishWorkflow = await readNormalizedText(publishWorkflowUrl);
+  const releaseWorkflow = await readNormalizedText(releaseWorkflowUrl);
+
+  expect(publishWorkflow).toContain(
+    'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
+  );
+  expect(publishWorkflow).toContain(
+    'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1',
+  );
+  expect(releaseWorkflow).toContain(
+    'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1',
+  );
+});
+
 test('pins the release toolchain and runs every build gate without caching', async () => {
   const workflow = await readNormalizedText(publishWorkflowUrl);
 
