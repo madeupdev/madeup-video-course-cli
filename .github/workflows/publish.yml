@@ -194,7 +194,7 @@ jobs:
       - name: Submit exact tarball for human 2FA approval
         env:
           TARBALL: ${{ needs.build.outputs.tarball }}
-        run: npm stage publish "release-bundle/$TARBALL" --access public
+        run: npm stage publish "./release-bundle/$TARBALL" --access public
 
       - name: Record staged-publication evidence
         env:
