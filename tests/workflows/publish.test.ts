@@ -100,6 +100,17 @@ test('stages only the exact verified tag artifact through OIDC and the npm envir
   expect(workflow).toContain('Stage ID:');
 });
 
+test('installs locked runtime verifier dependencies safely before staging', async () => {
+  const workflow = await readNormalizedText(publishWorkflowUrl);
+  const stageJob = workflow.slice(workflow.indexOf('\n  stage:'));
+
+  expect(stageJob).toContain('corepack install --global pnpm@11.17.0');
+  expect(stageJob).toContain('pnpm install --frozen-lockfile --prod --ignore-scripts');
+  expect(stageJob.indexOf('pnpm install --frozen-lockfile --prod --ignore-scripts')).toBeLessThan(
+    stageJob.indexOf('node scripts/release.ts verify-bundle'),
+  );
+});
+
 test('releases only a successful trusted Publish tag run with narrow write permission', async () => {
   const workflow = await readNormalizedText(releaseWorkflowUrl);
 

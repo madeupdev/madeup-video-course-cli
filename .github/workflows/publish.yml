@@ -160,8 +160,16 @@ jobs:
           node-version: 24.18.0
           package-manager-cache: false
 
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack install --global pnpm@11.17.0
+
       - name: Pin npm with trusted and staged publishing support
         run: npm install --global npm@11.18.0
+
+      - name: Install runtime verifier dependencies from lockfile
+        run: pnpm install --frozen-lockfile --prod --ignore-scripts
 
       - name: Download exact build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
