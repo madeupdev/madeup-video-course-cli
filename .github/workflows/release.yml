@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [Publish]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish verified GitHub Release
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.workflow_run.head_branch }}
+      UPSTREAM_SHA: ${{ github.event.workflow_run.head_sha }}
+      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+
+    steps:
+      - name: Validate trusted upstream metadata
+        run: |
+          node --input-type=module --eval '
+            const tag = process.env.TAG;
+            const sha = process.env.UPSTREAM_SHA;
+            const runId = process.env.UPSTREAM_RUN_ID;
+            if (!/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tag ?? "")) {
+              throw new Error(`Untrusted upstream tag: ${tag}`);
+            }
+            if (!/^[a-f0-9]{40}$/.test(sha ?? "")) throw new Error("Invalid upstream commit");
+            if (!/^[1-9]\d*$/.test(runId ?? "")) throw new Error("Invalid upstream run ID");
+          '
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Pin npm for registry evidence queries
+        run: npm install --global npm@11.18.0
+
+      - name: Download exact upstream publication bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: trusted-publication-bundle
+          path: release-bundle
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify exact checksum and packed metadata
+        id: bundle
+        working-directory: release-bundle
+        run: |
+          VERSION="${TAG#v}"
+          TARBALL="madeup-video-course-${VERSION}.tgz"
+          test "$(find . -maxdepth 1 -type f -name '*.tgz' -print | wc -l | tr -d ' ')" = "1"
+          test -f "$TARBALL"
+          test -f SHA256SUMS
+          test "$(wc -l < SHA256SUMS | tr -d ' ')" = "1"
+          sha256sum --check --strict SHA256SUMS
+          PACKED_METADATA="$(tar -xOf "$TARBALL" package/package.json)"
+          PACKAGE_NAME="$(node --input-type=module --eval 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.name));' "$PACKED_METADATA")"
+          PACKAGE_VERSION="$(node --input-type=module --eval 'const value=JSON.parse(process.argv[1]); process.stdout.write(String(value.version));' "$PACKED_METADATA")"
+          test "$PACKAGE_NAME" = "@madeup-video/course"
+          test "$PACKAGE_VERSION" = "$VERSION"
+          SHA256="$(cut -d ' ' -f 1 SHA256SUMS)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+      - name: Create or verify draft GitHub Release
+        env:
+          TARBALL: ${{ steps.bundle.outputs.tarball }}
+          SHA256: ${{ steps.bundle.outputs.sha256 }}
+        run: |
+          DRAFT_COUNT="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | select(.tag_name == \"$TAG\" and .draft == true)] | length" | awk '{ total += $1 } END { print total + 0 }')"
+          PUBLISHED_COUNT="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | select(.tag_name == \"$TAG\" and .draft == false)] | length" | awk '{ total += $1 } END { print total + 0 }')"
+          test "$PUBLISHED_COUNT" = "0"
+          test "$DRAFT_COUNT" = "0" || test "$DRAFT_COUNT" = "1"
+          if [[ "$DRAFT_COUNT" == "1" ]]; then
+            echo "Reusing existing draft release for $TAG."
+            gh release upload "$TAG" \
+              "release-bundle/$TARBALL" \
+              release-bundle/SHA256SUMS \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "release-bundle/$TARBALL" \
+              release-bundle/SHA256SUMS \
+              --draft \
+              --verify-tag \
+              --title "$TAG" \
+              --notes "Exact npm archive staged by trusted GitHub Actions. SHA-256: $SHA256"
+          fi
+
+      - name: Wait for human npm staged-publication approval
+        env:
+          VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          if ! npm view "@madeup-video/course@${VERSION}" version > /dev/null 2>&1; then
+            echo "::error::The npm stage has not been approved yet. Approve it with 2FA, then rerun this failed workflow. The GitHub Release remains a draft."
+            exit 1
+          fi
+
+      - name: Verify registry integrity and provenance evidence
+        id: registry
+        env:
+          VERSION: ${{ steps.bundle.outputs.version }}
+          TARBALL: ${{ steps.bundle.outputs.tarball }}
+        run: |
+          npm view "@madeup-video/course@${VERSION}" dist --json > registry-dist.json
+          node --input-type=module --eval '
+            import { createHash } from "node:crypto";
+            import { appendFileSync, readFileSync } from "node:fs";
+            const tarball = readFileSync(`release-bundle/${process.env.TARBALL}`);
+            const dist = JSON.parse(readFileSync("registry-dist.json", "utf8"));
+            const integrity = `sha512-${createHash("sha512").update(tarball).digest("base64")}`;
+            if (dist.integrity !== integrity) throw new Error("Registry integrity differs from the release tarball");
+            if (typeof dist.attestations?.url !== "string" || dist.attestations.provenance == null) {
+              throw new Error("Registry provenance evidence is missing");
+            }
+            const url = new URL(dist.attestations.url);
+            if (url.protocol !== "https:" || url.hostname !== "registry.npmjs.org") {
+              throw new Error("Registry provenance URL is not trusted");
+            }
+            appendFileSync(process.env.GITHUB_OUTPUT, `integrity=${integrity}\nprovenance_url=${url.href}\n`);
+          '
+
+      - name: Publish the verified draft GitHub Release
+        run: gh release edit "$TAG" --draft=false
+
+      - name: Record release evidence
+        env:
+          INTEGRITY: ${{ steps.registry.outputs.integrity }}
+          PROVENANCE_URL: ${{ steps.registry.outputs.provenance_url }}
+        run: |
+          echo "## Published trusted release $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm registry integrity: \`$INTEGRITY\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "npm provenance evidence: $PROVENANCE_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "GitHub Release assets: \`${{ steps.bundle.outputs.tarball }}\`, \`SHA256SUMS\`." >> "$GITHUB_STEP_SUMMARY"

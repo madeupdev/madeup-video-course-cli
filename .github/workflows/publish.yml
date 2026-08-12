@@ -1,0 +1,198 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and verify exact package
+    runs-on: ubuntu-latest
+    outputs:
+      dry_run: ${{ steps.metadata.outputs.dry_run }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.bundle.outputs.version }}
+      tarball: ${{ steps.bundle.outputs.tarball }}
+      sha256: ${{ steps.bundle.outputs.sha256 }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Enable Corepack and activate pnpm
+        run: |
+          corepack enable
+          corepack install --global pnpm@11.17.0
+
+      - name: Pin npm with trusted and staged publishing support
+        run: npm install --global npm@11.18.0
+
+      - name: Record and validate execution mode
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          PACKAGE_VERSION="$(node --input-type=module --eval "import packageJson from './package.json' with { type: 'json' }; process.stdout.write(packageJson.version)")"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            node scripts/release.ts validate-tag "$REF_NAME" "$PACKAGE_VERSION"
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "::notice::DRY RUN: all npm publication, trust, tag, and GitHub Release mutations are disabled."
+          fi
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Complete test suite
+        run: pnpm test
+
+      - name: Replay recipes exactly
+        run: pnpm test:replay
+
+      - name: Build
+        run: pnpm build
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
+      - name: Create one exact package tarball
+        run: |
+          mkdir release-bundle
+          pnpm pack --pack-destination release-bundle
+
+      - name: Inspect package and generate checksum
+        id: bundle
+        env:
+          DRY_RUN: ${{ steps.metadata.outputs.dry_run }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            node scripts/release.ts prepare-dry-run release-bundle
+          else
+            node scripts/release.ts prepare "$TAG" release-bundle
+          fi
+          node scripts/inspect-pack.ts "release-bundle/$(find release-bundle -maxdepth 1 -type f -name '*.tgz' -exec basename {} \;)"
+
+      - name: Verify exact release bundle
+        env:
+          DRY_RUN: ${{ steps.metadata.outputs.dry_run }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            node scripts/release.ts verify-dry-run release-bundle
+          else
+            node scripts/release.ts verify-bundle "$TAG" release-bundle
+          fi
+
+      - name: Install and smoke-test exact tarball
+        run: |
+          export SMOKE_DIRECTORY="$(mktemp -d)"
+          node --input-type=module --eval "import { writeFileSync } from 'node:fs'; import { join } from 'node:path'; writeFileSync(join(process.env.SMOKE_DIRECTORY, 'package.json'), '{\"private\":true}\n');"
+          pnpm --dir "$SMOKE_DIRECTORY" add "$GITHUB_WORKSPACE/release-bundle/$TARBALL"
+          pnpm --dir "$SMOKE_DIRECTORY" exec madeup-video-course --help
+        env:
+          TARBALL: ${{ steps.bundle.outputs.tarball }}
+
+      - name: Upload exact trusted-publication bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trusted-publication-bundle
+          path: |
+            release-bundle/${{ steps.bundle.outputs.tarball }}
+            release-bundle/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report safe dry run
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "## DRY RUN" >> "$GITHUB_STEP_SUMMARY"
+          echo "DRY RUN: npm publication and GitHub Release creation were skipped." >> "$GITHUB_STEP_SUMMARY"
+          echo "Validated tarball: \`${{ steps.bundle.outputs.tarball }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA-256: \`${{ steps.bundle.outputs.sha256 }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  stage:
+    name: Stage verified package on npm
+    needs: build
+    if: ${{ needs.build.outputs.dry_run == 'false' }}
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out tagged release validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Pin npm with trusted and staged publishing support
+        run: npm install --global npm@11.18.0
+
+      - name: Download exact build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: trusted-publication-bundle
+          path: release-bundle
+
+      - name: Reverify exact release bundle
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: node scripts/release.ts verify-bundle "$TAG" release-bundle
+
+      - name: Prevent duplicate publication
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          if npm view "@madeup-video/course@${VERSION}" version > /dev/null 2>&1; then
+            echo "::error::@madeup-video/course@${VERSION} already exists; refusing to publish again."
+            exit 1
+          fi
+
+      - name: Submit exact tarball for human 2FA approval
+        env:
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: npm stage publish "release-bundle/$TARBALL" --access public
+
+      - name: Record staged-publication evidence
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          echo "## npm staged publication" >> "$GITHUB_STEP_SUMMARY"
+          echo "Stage ID: see the npm stage command output and the package's Staged Packages page." >> "$GITHUB_STEP_SUMMARY"
+          echo "@madeup-video/course@${VERSION} was staged through OIDC and still requires human 2FA approval." >> "$GITHUB_STEP_SUMMARY"
+          echo "After approval, the release workflow records npm view \"@madeup-video/course@${VERSION}\" dist.integrity and provenance evidence." >> "$GITHUB_STEP_SUMMARY"
