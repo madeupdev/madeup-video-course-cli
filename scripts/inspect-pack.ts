@@ -11,6 +11,7 @@ import type { Headers } from 'tar-stream';
 
 export type PackageInspection = Readonly<{
   packageName: string;
+  packageVersion: string;
   files: string[];
   binPaths: string[];
 }>;
@@ -351,6 +352,10 @@ export async function inspectPackageTarball(tarballPath: string): Promise<Packag
   if (typeof packageName !== 'string' || packageName.length === 0) {
     throw new Error('Packed package.json#name must be a non-empty string');
   }
+  const packageVersion = packageJson.version;
+  if (typeof packageVersion !== 'string' || packageVersion.length === 0) {
+    throw new Error('Packed package.json#version must be a non-empty string');
+  }
   const binPaths = packageBinPaths(packageJson);
   for (const binPath of binPaths) {
     const executable = files.get(binPath);
@@ -363,7 +368,12 @@ export async function inspectPackageTarball(tarballPath: string): Promise<Packag
     if (!files.has(requiredFile)) throw new Error(`Required runtime file ${requiredFile} is missing`);
   }
 
-  return { packageName, files: [...files.keys()].sort(), binPaths: [...binPaths].sort() };
+  return {
+    packageName,
+    packageVersion,
+    files: [...files.keys()].sort(),
+    binPaths: [...binPaths].sort(),
+  };
 }
 
 async function main(): Promise<void> {

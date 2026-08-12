@@ -120,6 +120,115 @@ The Ubuntu job additionally inspects the real tarball, installs that exact
 archive into a clean temporary project, and runs
 `pnpm exec madeup-video-course --help` from the installed package.
 
+## Trusted publication
+
+Release automation uses Node.js 24.18.0, pnpm 11.17.0, and npm 11.18.0 on
+GitHub-hosted runners. The Publish workflow installs from the frozen lockfile,
+runs every repository gate and the production audit, creates exactly one
+tarball, inspects it, smoke-tests it, and verifies `SHA256SUMS`. A tag is
+accepted only when it is exact `vMAJOR.MINOR.PATCH` and exactly matches the
+package version. A duplicate registry version is rejected before staging.
+
+No npm token, `NODE_AUTH_TOKEN`, or long-lived publication credential is used.
+For automated releases, the exact verified tarball is submitted through OIDC
+with `npm stage publish`. A maintainer reviews and approves it with 2FA. The
+Release workflow downloads that same upstream artifact, creates or reuses a
+draft GitHub Release, and publishes the draft only after the npm registry's
+integrity and provenance evidence match the tarball.
+
+### Safe dry run
+
+After this workflow is present on the default branch, open
+**Actions → Publish → Run workflow**. A manual run is always a **DRY RUN**: it
+performs installation, lint, typecheck, the full test suite, recipe replay,
+build, production audit, packing, inspection, checksum verification and the
+installed-package smoke test. It cannot publish or stage npm content, mutate
+npm trust, create a tag, create a GitHub Release, or change repository
+visibility. Pull requests also exercise the workflow validation tests through
+normal CI without receiving publication or release permissions.
+
+### One-time package bootstrap
+
+There is an unavoidable registry bootstrap exception. `npm stage publish`
+cannot create a new package, and `npm trust` requires an existing package.
+Therefore `@madeup-video/course` must first be published manually from the
+exact locally inspected and checksummed archive with interactive account 2FA.
+No npm token is needed or permitted. Because npm provenance must originate in a
+supported cloud CI environment and link a public GitHub repository and a public
+npm package, the bootstrap version cannot have npm provenance.
+
+Only after the history purge and every checkpoint below is approved, prepare a
+real, non-development package version and run the full local gates. The manual
+bootstrap publication command must target the exact archive already inspected
+and checksummed; `--provenance=false` explicitly overrides this repository's
+normal trusted-publication setting for this one unavoidable local publication:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:replay
+pnpm build
+pnpm audit --prod
+mkdir release-bundle
+pnpm pack --pack-destination release-bundle
+node scripts/release.ts prepare vMAJOR.MINOR.PATCH release-bundle
+node scripts/release.ts verify-bundle vMAJOR.MINOR.PATCH release-bundle
+npm publish release-bundle/madeup-video-course-MAJOR.MINOR.PATCH.tgz --access public --provenance=false
+```
+
+The final command is an external mutation and must not be run without explicit
+approval at that checkpoint. The first automated OIDC release must use a later,
+previously unpublished version; the bootstrap version cannot be replayed
+through the tag workflow.
+
+### Trusted-publisher configuration
+
+After the package exists, create the protected GitHub `npm` environment and
+configure one npm trusted publisher with these exact values:
+
+- Provider: GitHub Actions
+- GitHub owner: `madeupdev`
+- Repository: `madeup-video-course-cli`
+- Workflow filename: `publish.yml`
+- Environment: `npm`
+- Allowed action: `npm stage publish` only (stage-only)
+
+Stage-only permission deliberately retains a human proof-of-presence gate.
+Direct OIDC publication would be simpler and faster, but it would allow the
+workflow to make a version public without separate human 2FA approval. After a
+staged release succeeds, set package publishing access to require 2FA and
+disallow tokens. July 2026 npm changes make bypass-2FA tokens unsuitable for
+account/package administration and are removing their direct-publish role; the
+workflow does not create or depend on one.
+
+For each automated release, update `package.json` to a new stable version,
+merge the reviewed commit, then create and push the matching exact tag. The
+Publish workflow stages the archive. Approve the staged npm package in npmjs.com
+or interactively with `npm stage approve <stage-id>`. If the Release workflow
+has already stopped at its approval gate, rerun the failed `Release` workflow.
+It will reuse the draft and exact upstream artifact, verify registry integrity
+and provenance, and then publish the GitHub Release.
+
+### External-change checkpoints
+
+Stop and obtain explicit approval separately before each action:
+
+1. Confirm the private-email history purge has completed.
+2. Make the repository public.
+3. Perform the first npm publication with the exact bootstrap tarball and 2FA.
+4. Create the protected GitHub environment named `npm`.
+5. Configure the npm trusted publisher with the exact stage-only identity above.
+6. Disable token publication only after the trusted staged flow is proven.
+7. Enable immutable GitHub Releases only after the release flow is proven.
+8. Create and push the first automated release tag.
+9. Approve the staged npm package and permit the draft release to be published.
+
+The pending GitHub Support history purge currently blocks checkpoints 2–9 and
+all provenance-bearing publication. It does not block review, CI, or a safe
+dry-run PR.
+
 ## License
 
 This software is available for noncommercial use under the

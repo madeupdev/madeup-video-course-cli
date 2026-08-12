@@ -108,6 +108,7 @@ test('accepts a packed CLI with required runtime and recovery files', async () =
   const result = await inspectPackageTarball(tarballPath);
 
   expect(result.packageName).toBe('@madeup-video/course');
+  expect(result.packageVersion).toBe('0.0.0-development');
   expect(result.binPaths).toEqual(['package/dist/cli.js']);
   expect(result.files).toContain('package/recovery/course-v1.0.0.json');
 });

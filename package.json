@@ -21,7 +21,9 @@
     "pack:inspect": "node scripts/inspect-pack.ts",
     "test": "vitest run",
     "test:inspect-pack": "vitest run tests/scripts/inspect-pack.test.ts",
+    "test:release": "vitest run tests/scripts/release.test.ts",
     "test:replay": "vitest run tests/replay/replay.test.ts",
+    "test:workflows": "vitest run tests/workflows/publish.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json"
   },
