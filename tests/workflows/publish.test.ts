@@ -127,9 +127,10 @@ test('releases only a successful trusted Publish tag run with narrow write permi
 
   expect(workflow).toMatch(/^name: Release$/mu);
   expect(workflow).toContain('workflow_run:');
+  expect(workflow).toMatch(/^[ ]{2}workflow_dispatch:\n[ ]{4}inputs:\n[ ]{6}upstream_run_id:/mu);
   expect(workflow).toContain('workflows: [Publish]');
   expect(workflow).toContain('types: [completed]');
-  expect(workflow).toMatch(/^permissions:\n[ ]{2}contents: write$/mu);
+  expect(workflow).toMatch(/^permissions:\n[ ]{2}actions: read\n[ ]{2}contents: write$/mu);
   expect(workflow).not.toContain('id-token: write');
   expect(workflow).not.toContain('pull_request_target');
   expect(workflow).toContain('github.event.workflow_run.event == \'push\'');
@@ -137,11 +138,40 @@ test('releases only a successful trusted Publish tag run with narrow write permi
   expect(workflow).toContain('Validate trusted upstream metadata');
 });
 
+test('authenticates manual recovery from one exact successful Publish run', async () => {
+  const workflow = await readNormalizedText(releaseWorkflowUrl);
+
+  expect(workflow).toContain('GH_REPO: ${{ github.repository }}');
+  expect(workflow).toContain('REQUESTED_RUN_ID: ${{');
+  expect(workflow).toContain('inputs.upstream_run_id');
+  expect(workflow).toContain('actions/runs/${REQUESTED_RUN_ID}');
+  for (const trustedValue of [
+    'Publish',
+    '.github/workflows/publish.yml',
+    'push',
+    'completed',
+    'success',
+    'head_branch',
+    'head_sha',
+    'head_repository.full_name',
+    'repository.full_name',
+  ]) {
+    expect(workflow).toContain(trustedValue);
+  }
+  expect(workflow).toContain('echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"');
+  expect(workflow).toContain('echo "TAG=$TAG" >> "$GITHUB_ENV"');
+  expect(workflow).toContain('run-id: ${{ steps.upstream.outputs.run_id }}');
+  expect(workflow).toContain('git/ref/tags/${TAG}');
+  expect(workflow).toContain('ref.object?.type !== "commit"');
+  expect(workflow).toContain('ref.object.sha !== process.env.UPSTREAM_SHA');
+  expect(workflow).not.toContain('actions/checkout');
+});
+
 test('downloads and verifies the exact upstream artifact without rebuilding', async () => {
   const workflow = await readNormalizedText(releaseWorkflowUrl);
 
   expect(workflow).toMatch(/uses: actions\/download-artifact@[a-f0-9]{40}/u);
-  expect(workflow).toContain('run-id: ${{ github.event.workflow_run.id }}');
+  expect(workflow).toContain('run-id: ${{ steps.upstream.outputs.run_id }}');
   expect(workflow).toContain('github-token: ${{ github.token }}');
   expect(workflow).toContain('name: trusted-publication-bundle');
   expect(workflow).toContain('sha256sum --check --strict SHA256SUMS');
@@ -195,6 +225,8 @@ test('documents the exact stage-only trusted publisher and approval flow', async
   expect(runbook).toContain('`DRY RUN` notice');
   expect(runbook).toContain('approve the stage with npm account 2FA');
   expect(runbook).toMatch(/rerun the\s+failed Release workflow/iu);
+  expect(runbook).toContain('Actions → Release → Run workflow');
+  expect(runbook).toContain('successful Publish workflow run ID');
 });
 
 test('documents every remaining external release checkpoint', async () => {

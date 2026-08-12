@@ -4,40 +4,96 @@ on:
   workflow_run:
     workflows: [Publish]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      upstream_run_id:
+        description: Successful Publish workflow run ID to recover
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
-  group: release-${{ github.event.workflow_run.head_branch }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.upstream_run_id || github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
   release:
     name: Publish verified GitHub Release
     if: >-
-      github.event.workflow_run.event == 'push' &&
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.repository.full_name == github.repository
+      github.event.repository.full_name == github.repository)
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.workflow_run.head_branch }}
-      UPSTREAM_SHA: ${{ github.event.workflow_run.head_sha }}
-      UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Validate trusted upstream metadata
+        id: upstream
+        env:
+          REQUESTED_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.upstream_run_id || github.event.workflow_run.id }}
         run: |
           node --input-type=module --eval '
-            const tag = process.env.TAG;
-            const sha = process.env.UPSTREAM_SHA;
-            const runId = process.env.UPSTREAM_RUN_ID;
+            const runId = process.env.REQUESTED_RUN_ID;
+            if (!/^[1-9]\d*$/.test(runId ?? "") || !Number.isSafeInteger(Number(runId))) {
+              throw new Error("Invalid upstream run ID");
+            }
+          '
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${REQUESTED_RUN_ID}" > upstream-run.json
+          node --input-type=module --eval '
+            import { readFileSync } from "node:fs";
+            const run = JSON.parse(readFileSync("upstream-run.json", "utf8"));
+            const runId = Number(process.env.REQUESTED_RUN_ID);
+            const expected = [
+              ["id", run.id, runId],
+              ["repository.full_name", run.repository?.full_name, process.env.GITHUB_REPOSITORY],
+              ["head_repository.full_name", run.head_repository?.full_name, process.env.GITHUB_REPOSITORY],
+              ["name", run.name, "Publish"],
+              ["path", run.path, ".github/workflows/publish.yml"],
+              ["event", run.event, "push"],
+              ["status", run.status, "completed"],
+              ["conclusion", run.conclusion, "success"],
+            ];
+            for (const [field, actual, trusted] of expected) {
+              if (actual !== trusted) throw new Error(`Untrusted upstream ${field}: ${actual}`);
+            }
+            const tag = run.head_branch;
+            const sha = run.head_sha;
             if (!/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(tag ?? "")) {
               throw new Error(`Untrusted upstream tag: ${tag}`);
             }
             if (!/^[a-f0-9]{40}$/.test(sha ?? "")) throw new Error("Invalid upstream commit");
-            if (!/^[1-9]\d*$/.test(runId ?? "")) throw new Error("Invalid upstream run ID");
+          '
+          RUN_ID="$(jq -r '.id' upstream-run.json)"
+          TAG="$(jq -r '.head_branch' upstream-run.json)"
+          SHA="$(jq -r '.head_sha' upstream-run.json)"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "UPSTREAM_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "UPSTREAM_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Verify upstream tag still targets published commit
+        env:
+          TAG: ${{ steps.upstream.outputs.tag }}
+          UPSTREAM_SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" > upstream-tag.json
+          node --input-type=module --eval '
+            import { readFileSync } from "node:fs";
+            const ref = JSON.parse(readFileSync("upstream-tag.json", "utf8"));
+            if (ref.ref !== `refs/tags/${process.env.TAG}` || ref.object?.type !== "commit") {
+              throw new Error("Upstream tag is missing or is not a lightweight commit tag");
+            }
+            if (ref.object.sha !== process.env.UPSTREAM_SHA) {
+              throw new Error("Upstream tag no longer targets the published commit");
+            }
           '
 
       - name: Set up Node.js
@@ -54,7 +110,7 @@ jobs:
         with:
           name: trusted-publication-bundle
           path: release-bundle
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.upstream.outputs.run_id }}
           github-token: ${{ github.token }}
 
       - name: Verify exact checksum and packed metadata
