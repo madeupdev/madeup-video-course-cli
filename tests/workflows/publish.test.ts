@@ -100,6 +100,17 @@ test('stages only the exact verified tag artifact through OIDC and the npm envir
   expect(workflow).toContain('Stage ID:');
 });
 
+test('passes the release tarball to npm as an explicit local package path', async () => {
+  const workflow = await readNormalizedText(publishWorkflowUrl);
+
+  expect(workflow).toContain(
+    'npm stage publish "./release-bundle/$TARBALL" --access public',
+  );
+  expect(workflow).not.toContain(
+    'npm stage publish "release-bundle/$TARBALL" --access public',
+  );
+});
+
 test('installs locked runtime verifier dependencies safely before staging', async () => {
   const workflow = await readNormalizedText(publishWorkflowUrl);
   const stageJob = workflow.slice(workflow.indexOf('\n  stage:'));
