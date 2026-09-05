@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "courseVersion": "1.0.0",
+  "project": {
+    "packageName": "@madeup-video/storefront",
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "localArtifacts": []
+  },
+  "release": {
+    "repository": "https://github.com/madeupdev/advanced-monorepos-project",
+    "tag": "course-v1.0.0",
+    "maxAssetBytes": 104857600
+  },
+  "recoveryStates": [
+    {
+      "id": "S06-L02-start",
+      "sourceCommit": "139ed78d70cd5349bdc9fdf820aa14624460f3c7",
+      "asset": "S06-L02-start.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [
+          {
+            "path": "package.json",
+            "mode": 420,
+            "sha256": "c59f8c5b5714901a6e0622fd5db5dc5fafb32f262f8bb810a10c81a2ecd465d8"
+          }
+        ]
+      },
+      "verification": [
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm test:all",
+        "pnpm build"
+      ]
+    },
+    {
+      "id": "S06-L03-start",
+      "sourceCommit": "fc93b35563ec9e4a30ca59e10436026d03dc61e6",
+      "asset": "S06-L03-start.tar.gz",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "tree": {
+        "algorithm": "course-tree-v1",
+        "files": [
+          {
+            "path": "package.json",
+            "mode": 420,
+            "sha256": "c59f8c5b5714901a6e0622fd5db5dc5fafb32f262f8bb810a10c81a2ecd465d8"
+          }
+        ]
+      },
+      "verification": [
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm test:all",
+        "pnpm build"
+      ]
+    }
+  ],
+  "recipes": [
+    {
+      "id": "admin-ui",
+      "description": "Install the prepared admin product experience and its local API integration",
+      "expectedPackageName": "@madeup-video/storefront",
+      "startingState": "S06-L02-start",
+      "resultState": "S06-L03-start",
+      "operations": [
+        {
+          "type": "replace",
+          "destination": "apps/admin-e2e/playwright.config.ts",
+          "template": "recipes/admin-ui/files/apps/admin-e2e/playwright.config.ts",
+          "beforeSha256": "fa26b7987c68711886af068b989bf8d30185cd59db52f20cb86548d529baf04c",
+          "afterSha256": "4264c3e50189b944a95594012fc5a628446491d5b82b855abe16018a2f83e849",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin-e2e/project.json",
+          "template": "recipes/admin-ui/files/apps/admin-e2e/project.json",
+          "beforeSha256": "5fc92bd1826684d613929107cbfc6a03c7b68a4e93b64628c932f00f283ca4d1",
+          "afterSha256": "3de5a5a63d076682673bbd32c5f96f024a70f50df81c8dd81b5ed2181b8fa411",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin-e2e/src/admin.spec.ts",
+          "template": "recipes/admin-ui/files/apps/admin-e2e/src/admin.spec.ts",
+          "beforeSha256": "c3ca4524dc1af96f810b77bb1a6f4080c6923361762b6f4495bcfd1f959504c2",
+          "afterSha256": "c42292a1c18132c90c29d1ed8cfdd0599bedfac590a438dd53a9fa71daeba99c",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin-e2e/tsconfig.json",
+          "template": "recipes/admin-ui/files/apps/admin-e2e/tsconfig.json",
+          "beforeSha256": "b8d891b3685071e66edb95912ed5430fd5609146ab3bfb34555c4123fa75711c",
+          "afterSha256": "c5acd30493134cb85f537f953c24aa15e9164db9751a5b19d5b610a0d3cf6591",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin/project.json",
+          "template": "recipes/admin-ui/files/apps/admin/project.json",
+          "beforeSha256": "ac8d9078060ed7cd6bd38b93daf1438912c005d5cabe96880da3efcdf630f30a",
+          "afterSha256": "9c4b831aac61aa536b40b8bc6eb6e2f736dfbf70c5f67831c87e2dab865db080",
+          "mode": 420
+        },
+        {
+          "type": "add",
+          "destination": "apps/admin/src/app/api.ts",
+          "template": "recipes/admin-ui/files/apps/admin/src/app/api.ts",
+          "afterSha256": "e7d7bffd0f097f9fbace4abaa73e6f30dbd85b4f868e4cb44ac856b7bc508848",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin/src/app/app.css",
+          "template": "recipes/admin-ui/files/apps/admin/src/app/app.css",
+          "beforeSha256": "46001ed5783091f34418a60bd690637eb22759ad9248cc229d61f88f72997eaa",
+          "afterSha256": "cd5c398d88c95362c1cfce9d31058dff07355a332dacc4545dcb0c0058b17dea",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/admin/src/app/app.tsx",
+          "template": "recipes/admin-ui/files/apps/admin/src/app/app.tsx",
+          "beforeSha256": "017224bf4c5c95427cac3dc4de4e48776c2d09d9d8fbd29e1493754dc17b0b5a",
+          "afterSha256": "d19efaa0e16d6b5469e86f14175e46723cb1e339cd9c195484464a41ea683f23",
+          "mode": 420
+        },
+        {
+          "type": "add",
+          "destination": "apps/admin/src/app/contracts.ts",
+          "template": "recipes/admin-ui/files/apps/admin/src/app/contracts.ts",
+          "afterSha256": "8f46b3145f537c11448ac64ce849d5ae12586e8e0f7c3d65a38398fa1abf5c3b",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/api-e2e/src/api.spec.ts",
+          "template": "recipes/admin-ui/files/apps/api-e2e/src/api.spec.ts",
+          "beforeSha256": "cb17f164eb7646c4cbe40561881aca46154b897ceb77df54c67c75ebeca0e9ef",
+          "afterSha256": "f3ecead444a9d8aa59b79aa7229832010f5e2f0c7f7df5edb1602ac8e2942303",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "apps/api/src/app/configure-api.ts",
+          "template": "recipes/admin-ui/files/apps/api/src/app/configure-api.ts",
+          "beforeSha256": "6786fbe49fcc75c423e0efabcf3e552a3f2b33ab464e437ab8ee4060ce0d3b4b",
+          "afterSha256": "da0b4ba93b735d4839ec0f9a5429e89054bd46202ac16c70b91eab4f54335243",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "eslint.config.mjs",
+          "template": "recipes/admin-ui/files/eslint.config.mjs",
+          "beforeSha256": "56d818f0ea197e3708c9b5f63799b0191ebd9aac8e152ae14c544a85e9196cd8",
+          "afterSha256": "1e0d36dd4fea351e9d88d7e9817799d3960cc414f938d90219c9cecb46451ec0",
+          "mode": 420
+        },
+        {
+          "type": "replace",
+          "destination": "tests/tooling/architecture-projects.test.mjs",
+          "template": "recipes/admin-ui/files/tests/tooling/architecture-projects.test.mjs",
+          "beforeSha256": "50603ea24da0c9629abc84bfa356b1c30b9ef2574c901bcd1bda1363336ad150",
+          "afterSha256": "315ded15763f9020ef3a01bb623fd133b143d0fd99ce251c794d6f274c24a0f5",
+          "mode": 420
+        }
+      ],
+      "verification": [
+        "pnpm lint",
+        "pnpm typecheck",
+        "pnpm test:all",
+        "pnpm build"
+      ]
+    }
+  ]
+}

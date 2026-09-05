@@ -56,7 +56,7 @@ test('keeps replay fixtures out of packages and exposes the focused replay check
   expect(packageMetadata.files).toContain('recipes');
   expect(packageMetadata.files).toContain('!recipes/fixtures');
   expect(packageMetadata.scripts?.['test:replay']).toBe(
-    'vitest run tests/replay/replay.test.ts',
+    'vitest run tests/replay',
   );
 });
 
