@@ -13,6 +13,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { runCli } from '../src/cli.js';
 import { loadManifest } from '../src/manifest/load.js';
@@ -52,6 +53,7 @@ export type ReplayRecipeOptions = Readonly<{
 }>;
 
 export type ReplayRecipeResult = Readonly<{
+  dryRunStdout: string[];
   firstApply: Readonly<{ kind: 'applied'; changedFiles: string[] }>;
   secondApply: Readonly<{ kind: 'already-applied'; changedFiles: [] }>;
   firstStdout: string[];
@@ -132,12 +134,19 @@ async function git(
 ): Promise<ProcessResult> {
   return execute('git', args, {
     cwd: repository,
-    env: {
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_TERMINAL_PROMPT: '0',
-      ...env,
-    },
+    env: replayGitEnvironment(env),
   });
+}
+
+export function replayGitEnvironment(
+  extra: NodeJS.ProcessEnv = {},
+): NodeJS.ProcessEnv {
+  return {
+    ...extra,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
+    GIT_TERMINAL_PROMPT: '0',
+  };
 }
 
 function validateCommit(commit: string, label: string): void {
@@ -408,11 +417,12 @@ async function invokeApply(
   projectRoot: string,
   sourceRoot: string,
   manifest: Awaited<ReturnType<typeof loadManifest>> & { ok: true },
+  flags: readonly string[],
 ): Promise<{ stdout: string[]; stderr: string[] }> {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const exitCode = await runCli(
-    ['apply', recipeId, '--yes'],
+    ['apply', recipeId, ...flags],
     { stdout: (line) => stdout.push(line), stderr: (line) => stderr.push(line) },
     {
       apply: {
@@ -477,7 +487,12 @@ export async function replayRecipe(options: ReplayRecipeOptions): Promise<Replay
   try {
     await exportTree(projectRoot, startingTree);
     await initialiseRepository(projectRoot, startingTree, platform);
-    const first = await invokeApply(recipe.id, projectRoot, sourceRoot, loaded);
+    const beforeDryRun = await gitState(projectRoot);
+    const dryRun = await invokeApply(recipe.id, projectRoot, sourceRoot, loaded, ['--dry-run']);
+    if (await gitState(projectRoot) !== beforeDryRun) {
+      throw new Error('CLI dry-run changed files or Git state');
+    }
+    const first = await invokeApply(recipe.id, projectRoot, sourceRoot, loaded, ['--yes']);
     if (!first.stdout.includes('Changed files:')) {
       throw new Error('First CLI apply did not report an applied result');
     }
@@ -488,7 +503,7 @@ export async function replayRecipe(options: ReplayRecipeOptions): Promise<Replay
     );
     await assertExactTree(expectedTree, projectRoot, replayRoot, startingTree, recipe, platform);
     const beforeSecondApply = await gitState(projectRoot);
-    const second = await invokeApply(recipe.id, projectRoot, sourceRoot, loaded);
+    const second = await invokeApply(recipe.id, projectRoot, sourceRoot, loaded, ['--yes']);
     if (second.stdout.length !== 0) {
       throw new Error(`Second CLI apply was not the exact already-applied no-op: ${second.stdout.join('\n')}`);
     }
@@ -498,6 +513,7 @@ export async function replayRecipe(options: ReplayRecipeOptions): Promise<Replay
     }
     await assertExactTree(expectedTree, projectRoot, replayRoot, startingTree, recipe, platform);
     return {
+      dryRunStdout: dryRun.stdout,
       firstApply: {
         kind: 'applied',
         changedFiles: recipe.operations.map(({ destination }) => destination),
@@ -514,4 +530,52 @@ export async function replayRecipe(options: ReplayRecipeOptions): Promise<Replay
   } finally {
     await rm(replayRoot, { force: true, recursive: true });
   }
+}
+
+export function parseReplayArguments(argv: readonly string[]): {
+  manifestPath: string;
+  recipeId: string;
+  sourceRepository: string;
+} {
+  const names = new Map<string, string>([
+    ['--manifest', 'manifestPath'],
+    ['--recipe', 'recipeId'],
+    ['--project-repository', 'sourceRepository'],
+  ] as const);
+  const values = new Map<string, string>();
+  for (let index = 0; index < argv.length; index += 2) {
+    const option = argv[index];
+    const value = argv[index + 1];
+    const property = option === undefined ? undefined : names.get(option);
+    if (property === undefined || value === undefined || value.length === 0 || values.has(property)) {
+      throw new Error('Invalid replay arguments');
+    }
+    values.set(property, value);
+  }
+  if (values.size !== names.size) throw new Error('Invalid replay arguments');
+  return {
+    manifestPath: values.get('manifestPath')!,
+    recipeId: values.get('recipeId')!,
+    sourceRepository: values.get('sourceRepository')!,
+  };
+}
+
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+  const args = parseReplayArguments(argv);
+  const manifestPath = resolve(args.manifestPath);
+  const result = await replayRecipe({
+    ...args,
+    manifestPath,
+    sourceRoot: resolve(dirname(manifestPath), '../..'),
+  });
+  process.stdout.write(
+    `Replayed ${result.firstApply.changedFiles.length} prepared files and verified an idempotent second apply.\n`,
+  );
+}
+
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
 }

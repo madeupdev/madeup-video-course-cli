@@ -27,6 +27,22 @@ const requiredPackageFiles = [
   'package/LICENSE.md',
   'package/recovery/course-v1.0.0.json',
 ] as const;
+const requiredRecipeFiles = [
+  'package/recipes/admin-ui/recipe.json',
+  'package/recipes/admin-ui/files/apps/admin-e2e/playwright.config.ts',
+  'package/recipes/admin-ui/files/apps/admin-e2e/project.json',
+  'package/recipes/admin-ui/files/apps/admin-e2e/src/admin.spec.ts',
+  'package/recipes/admin-ui/files/apps/admin-e2e/tsconfig.json',
+  'package/recipes/admin-ui/files/apps/admin/project.json',
+  'package/recipes/admin-ui/files/apps/admin/src/app/api.ts',
+  'package/recipes/admin-ui/files/apps/admin/src/app/app.css',
+  'package/recipes/admin-ui/files/apps/admin/src/app/app.tsx',
+  'package/recipes/admin-ui/files/apps/admin/src/app/contracts.ts',
+  'package/recipes/admin-ui/files/apps/api-e2e/src/api.spec.ts',
+  'package/recipes/admin-ui/files/apps/api/src/app/configure-api.ts',
+  'package/recipes/admin-ui/files/eslint.config.mjs',
+  'package/recipes/admin-ui/files/tests/tooling/architecture-projects.test.mjs',
+] as const;
 
 const compiledModuleNames = [
   'apply/plan',
@@ -65,6 +81,7 @@ const requiredCompiledRuntimeFiles = compiledModuleNames.map(
 );
 const exactAllowedFiles = new Set([
   ...requiredPackageFiles,
+  ...requiredRecipeFiles,
   ...compiledRuntimeFiles,
 ]);
 const expectedRecoverySha256 = '8d5bcd1858825ab3ede0f726587ccb7269c21c55e74c19833152976f64077d38';
@@ -89,7 +106,7 @@ const archiveSuffixPattern = /\.(?:7z|tar|tar\.gz|tgz|zip)$/iu;
 const sensitiveNamePattern = /(?:^|[-_.])(?:credential|credentials|secret|secrets)(?:$|[-_.])/iu;
 const privateKeySuffixPattern = /\.(?:key|p12|pem|pfx)$/iu;
 const unixLocalPathPattern =
-  /\/(?:Users|app|builds|data|etc|home|mnt|opt|private\/var\/folders|root|runner|srv|tmp|var\/(?:folders|lib|tmp)|workspaces?)\/[^\s"'`]+/u;
+  /(?<![A-Za-z0-9._-])\/(?:Users|app|builds|data|etc|home|mnt|opt|private\/var\/folders|root|runner|srv|tmp|var\/(?:folders|lib|tmp)|workspaces?)\/[^\s"'`]+/u;
 const windowsDriveLocalPathPattern = /(?<![A-Za-z0-9])[A-Za-z]:[\\/]{1,2}[^\s"'`]+/u;
 const windowsUncLocalPathPattern =
   /\\{2,4}[A-Za-z0-9._-]+\\{1,2}[A-Za-z0-9$._-]+\\{1,2}[^\s"'`]+/u;
@@ -333,6 +350,9 @@ export async function inspectPackageTarball(tarballPath: string): Promise<Packag
 
   for (const requiredFile of requiredPackageFiles) {
     if (!files.has(requiredFile)) throw new Error(`Required runtime file ${requiredFile} is missing`);
+  }
+  for (const requiredFile of requiredRecipeFiles) {
+    if (!files.has(requiredFile)) throw new Error(`Required recipe file ${requiredFile} is missing`);
   }
 
   const recoveryEntry = files.get('package/recovery/course-v1.0.0.json');

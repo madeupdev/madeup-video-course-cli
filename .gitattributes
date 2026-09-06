@@ -1,1 +1,2 @@
 recipes/fixtures/smoke/files/*.md -text
+recipes/admin-ui/files/** -text

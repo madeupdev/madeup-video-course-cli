@@ -8,4 +8,9 @@ describe('Vitest timeout policy', () => {
 
     expect(config.test?.testTimeout).toBe(process.platform === 'win32' ? 15_000 : 5_000);
   });
+
+  it('does not collect packaged recipe templates as CLI tests', () => {
+    const config = vitestConfig as { test?: { exclude?: string[] } };
+    expect(config.test?.exclude).toContain('recipes/**/files/**');
+  });
 });

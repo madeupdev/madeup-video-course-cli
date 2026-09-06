@@ -4,7 +4,13 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['.worktrees/**', 'coverage/**', 'dist/**', 'node_modules/**'],
+    ignores: [
+      '.worktrees/**',
+      'coverage/**',
+      'dist/**',
+      'node_modules/**',
+      'recipes/**/files/**',
+    ],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,
