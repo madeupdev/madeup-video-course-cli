@@ -238,7 +238,12 @@ describe('real admin-ui recipe', () => {
       replay: 'node --import tsx scripts/replay-recipes.ts',
       'test:replay': 'vitest run tests/replay',
     });
-    const entrypoint = spawnSync('pnpm', ['replay', ...args], {
+    const entrypoint = spawnSync(process.execPath, [
+      '--import',
+      'tsx',
+      'scripts/replay-recipes.ts',
+      ...args,
+    ], {
       cwd: repositoryRoot,
       encoding: 'utf8',
       env: { ...process.env, COURSE_PROJECT_REPOSITORY: project },
@@ -315,7 +320,10 @@ describe('real admin-ui recipe', () => {
     expect(result.firstApply.changedFiles).toEqual(changedPaths(requireProjectRepository()).map(({ path }) => path));
     expect(result.dryRunStdout).toHaveLength(13);
     expect(result.secondApply).toEqual({ kind: 'already-applied', changedFiles: [] });
-    expect(result.modeComparison).toBe(platform === 'win32' ? 'git-index-projection' : 'native-filesystem');
+    const effectivePlatform = platform ?? process.platform;
+    expect(result.modeComparison).toBe(
+      effectivePlatform === 'win32' ? 'git-index-projection' : 'native-filesystem',
+    );
     expect({
       head: String(git(sourceRepository, ['rev-parse', 'HEAD'])),
       status: String(git(sourceRepository, ['status', '--porcelain=v1', '-z'])),
