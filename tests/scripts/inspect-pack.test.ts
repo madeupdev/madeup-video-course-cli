@@ -43,6 +43,22 @@ const expectedRuntimeModules = [
   'scripts/build-recovery-assets',
   'state/classify',
 ] as const;
+const expectedRecipeFiles = [
+  'recipes/admin-ui/recipe.json',
+  'recipes/admin-ui/files/apps/admin-e2e/playwright.config.ts',
+  'recipes/admin-ui/files/apps/admin-e2e/project.json',
+  'recipes/admin-ui/files/apps/admin-e2e/src/admin.spec.ts',
+  'recipes/admin-ui/files/apps/admin-e2e/tsconfig.json',
+  'recipes/admin-ui/files/apps/admin/project.json',
+  'recipes/admin-ui/files/apps/admin/src/app/api.ts',
+  'recipes/admin-ui/files/apps/admin/src/app/app.css',
+  'recipes/admin-ui/files/apps/admin/src/app/app.tsx',
+  'recipes/admin-ui/files/apps/admin/src/app/contracts.ts',
+  'recipes/admin-ui/files/apps/api-e2e/src/api.spec.ts',
+  'recipes/admin-ui/files/apps/api/src/app/configure-api.ts',
+  'recipes/admin-ui/files/eslint.config.mjs',
+  'recipes/admin-ui/files/tests/tooling/architecture-projects.test.mjs',
+] as const;
 
 afterEach(async () => {
   await Promise.all(
@@ -87,6 +103,10 @@ function validEntries(): TarFixtureEntry[] {
       contents: moduleName === 'cli' ? '#!/usr/bin/env node\n' : 'export {};\n',
       mode: moduleName === 'cli' ? 0o755 : 0o644,
     })),
+    ...expectedRecipeFiles.map((path) => ({
+      name: `package/${path}`,
+      contents: readFileSync(new URL(`../../${path}`, import.meta.url)),
+    })),
     {
       name: 'package/recovery/course-v1.0.0.json',
       contents: expectedRecoveryContents,
@@ -102,7 +122,7 @@ async function writeTarball(entries: readonly TarFixtureEntry[]): Promise<string
   return tarballPath;
 }
 
-test('accepts a packed CLI with required runtime and recovery files', async () => {
+test('accepts a packed CLI with required runtime, recovery, and recipe files', async () => {
   const tarballPath = await writeTarball(validEntries());
 
   const result = await inspectPackageTarball(tarballPath);
@@ -111,6 +131,9 @@ test('accepts a packed CLI with required runtime and recovery files', async () =
   expect(result.packageVersion).toBe('0.0.0-development');
   expect(result.binPaths).toEqual(['package/dist/cli.js']);
   expect(result.files).toContain('package/recovery/course-v1.0.0.json');
+  expect(result.files).toEqual(expect.arrayContaining(
+    expectedRecipeFiles.map((path) => `package/${path}`),
+  ));
 });
 
 describe.each([
@@ -244,5 +267,15 @@ test('rejects a missing compiled runtime command module', async () => {
 
   await expect(inspectPackageTarball(tarballPath)).rejects.toThrow(
     /required runtime file.*commands\/apply\.js.*missing/iu,
+  );
+});
+
+test('rejects a missing required recipe file', async () => {
+  const missingRecipeFile = `package/${expectedRecipeFiles[0]}`;
+  const entries = validEntries().filter((entry) => entry.name !== missingRecipeFile);
+  const tarballPath = await writeTarball(entries);
+
+  await expect(inspectPackageTarball(tarballPath)).rejects.toThrow(
+    /required recipe file.*recipe\.json.*missing/iu,
   );
 });

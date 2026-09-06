@@ -33,6 +33,7 @@ const resultCommit = 'fc93b35563ec9e4a30ca59e10436026d03dc61e6';
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
 const recipePath = join(repositoryRoot, 'recipes/admin-ui/recipe.json');
 const historyBundlePath = join(repositoryRoot, 'tests/fixtures/admin-ui-history.bundle');
+const realRecipeTestTimeout = process.platform === 'win32' ? 120_000 : 30_000;
 const temporaryDirectories: string[] = [];
 let bundledHistoryDirectory: string | undefined;
 
@@ -69,10 +70,23 @@ function sha256(bytes: Buffer): string {
 }
 
 function changedPaths(repository: string): Array<{ path: string; type: 'add' | 'replace' }> {
-  const output = String(git(repository, ['diff', '--name-status', '--no-renames', startCommit, resultCommit]));
-  return output.trim().split('\n').map((line) => {
-    const [status, path] = line.split('\t');
-    if (!path || (status !== 'A' && status !== 'M')) throw new Error(`Unsupported recipe delta: ${line}`);
+  const output = String(git(repository, [
+    'diff',
+    '--name-status',
+    '--no-renames',
+    '-z',
+    startCommit,
+    resultCommit,
+  ]));
+  const fields = output.split('\0');
+  if (fields.at(-1) === '') fields.pop();
+  if (fields.length % 2 !== 0) throw new Error('Malformed NUL-delimited recipe delta');
+  return Array.from({ length: fields.length / 2 }, (_, index) => {
+    const status = fields[index * 2];
+    const path = fields[index * 2 + 1];
+    if (!path || (status !== 'A' && status !== 'M')) {
+      throw new Error(`Unsupported recipe delta: ${String(status)} ${String(path)}`);
+    }
     return { path, type: status === 'A' ? 'add' : 'replace' };
   });
 }
@@ -228,12 +242,12 @@ describe('real admin-ui recipe', () => {
       cwd: repositoryRoot,
       encoding: 'utf8',
       env: { ...process.env, COURSE_PROJECT_REPOSITORY: project },
-      timeout: 30_000,
+      timeout: realRecipeTestTimeout,
     });
     expect(entrypoint.status, entrypoint.stderr).toBe(0);
     expect(entrypoint.stderr).not.toMatch(/error|invalid/iu);
     expect(entrypoint.stdout).toContain('Replayed 13 prepared files');
-  }, 30_000);
+  }, realRecipeTestTimeout);
 
   it('is a valid closed manifest for the exact S06-L02 to S06-L03 transition', async () => {
     const value = await manifest();
@@ -306,7 +320,7 @@ describe('real admin-ui recipe', () => {
       head: String(git(sourceRepository, ['rev-parse', 'HEAD'])),
       status: String(git(sourceRepository, ['status', '--porcelain=v1', '-z'])),
     }).toEqual(sourceState);
-  }, 30_000);
+  }, realRecipeTestTimeout);
 
   it('refuses real dirty, wrong-project, mixed, missing, hash-mismatch, unsafe-path, and symlink cases without writes', async () => {
     const cases: Array<{
