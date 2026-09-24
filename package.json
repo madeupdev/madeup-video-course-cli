@@ -21,6 +21,7 @@
     "pack:inspect": "node scripts/inspect-pack.ts",
     "replay": "node --import tsx scripts/replay-recipes.ts",
     "test": "vitest run",
+    "test:installed-recovery": "node --test tests/scripts/rehearse-installed-recovery.test.mjs",
     "test:inspect-pack": "vitest run tests/scripts/inspect-pack.test.ts",
     "test:release": "vitest run tests/scripts/release.test.ts",
     "test:replay": "vitest run tests/replay",
